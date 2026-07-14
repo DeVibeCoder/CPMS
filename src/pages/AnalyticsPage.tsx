@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { format, parseISO } from "date-fns";
 import { usePageMeta } from "@/store/pageMeta";
+import { useIsMobile } from "@/hooks/useMediaQuery";
+import { SwipeCards } from "@/components/mobile/SwipeCards";
 import { TrendChart, CHART_COLORS } from "@/components/dashboard/TrendChart";
 import {
   DateRangeFilter,
@@ -40,6 +42,7 @@ export default function AnalyticsPage() {
   const [range, setRange] = useState(presetRange("month"));
 
   usePageMeta("Analytics", "View historical trends and performance.");
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     repo.listReports().then(setReports);
@@ -118,73 +121,91 @@ export default function AnalyticsPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-        <TrendChart
-          title="Current Stock Trend"
-          data={trend}
-          type="area"
-          decimals={0}
-          height={280}
-          series={[
-            {
-              key: "currentStock",
-              name: "Silo Balance (MT)",
-              color: CHART_COLORS.emerald,
-            },
-          ]}
-        />
-        <TrendChart
-          title="Production Trend"
-          data={trend}
-          type="area"
-          decimals={0}
-          height={280}
-          series={[
-            { key: "production", name: "Production (MT)", color: CHART_COLORS.blue },
-          ]}
-        />
-        <TrendChart
-          title="Sales Trend"
-          data={trend}
-          type="area"
-          decimals={0}
-          height={280}
-          series={[
-            { key: "sales", name: "Sales (MT)", color: CHART_COLORS.amber },
-          ]}
-        />
-        <TrendChart
-          title="Production vs Sales Comparison"
-          data={trend}
-          type="bar"
-          decimals={0}
-          height={280}
-          series={[
-            { key: "production", name: "Production", color: CHART_COLORS.blue },
-            { key: "sales", name: "Sales", color: CHART_COLORS.amber },
-          ]}
-        />
-        <TrendChart
-          title="50KG Bags Trend"
-          data={trend}
-          type="line"
-          decimals={0}
-          height={280}
-          series={[
-            { key: "bags50kg", name: "50KG Bags", color: CHART_COLORS.violet },
-          ]}
-        />
-        <TrendChart
-          title="Jumbo Bags Trend"
-          data={trend}
-          type="line"
-          decimals={0}
-          height={280}
-          series={[
-            { key: "jumbo", name: "Jumbo Bags", color: CHART_COLORS.cyan },
-          ]}
-        />
-      </div>
+      {(() => {
+        const height = isMobile ? 240 : 280;
+        const charts = [
+          <TrendChart
+            key="stock"
+            title="Current Stock Trend"
+            data={trend}
+            type="area"
+            decimals={0}
+            height={height}
+            series={[
+              {
+                key: "currentStock",
+                name: "Silo Balance (MT)",
+                color: CHART_COLORS.emerald,
+              },
+            ]}
+          />,
+          <TrendChart
+            key="prod"
+            title="Production Trend"
+            data={trend}
+            type="area"
+            decimals={0}
+            height={height}
+            series={[
+              {
+                key: "production",
+                name: "Production (MT)",
+                color: CHART_COLORS.blue,
+              },
+            ]}
+          />,
+          <TrendChart
+            key="sales"
+            title="Sales Trend"
+            data={trend}
+            type="area"
+            decimals={0}
+            height={height}
+            series={[
+              { key: "sales", name: "Sales (MT)", color: CHART_COLORS.amber },
+            ]}
+          />,
+          <TrendChart
+            key="pvs"
+            title="Production vs Sales"
+            data={trend}
+            type="bar"
+            decimals={0}
+            height={height}
+            series={[
+              { key: "production", name: "Production", color: CHART_COLORS.blue },
+              { key: "sales", name: "Sales", color: CHART_COLORS.amber },
+            ]}
+          />,
+          <TrendChart
+            key="50kg"
+            title="50KG Bags Trend"
+            data={trend}
+            type="line"
+            decimals={0}
+            height={height}
+            series={[
+              { key: "bags50kg", name: "50KG Bags", color: CHART_COLORS.violet },
+            ]}
+          />,
+          <TrendChart
+            key="jumbo"
+            title="Jumbo Bags Trend"
+            data={trend}
+            type="line"
+            decimals={0}
+            height={height}
+            series={[
+              { key: "jumbo", name: "Jumbo Bags", color: CHART_COLORS.cyan },
+            ]}
+          />,
+        ];
+        return isMobile ? (
+          <SwipeCards>{charts}</SwipeCards>
+        ) : (
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">{charts}</div>
+        );
+      })()}
 
       {/* Historical comparison table */}
       <Card className="mt-6">

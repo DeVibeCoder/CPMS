@@ -131,6 +131,23 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* Hide scrollbars (used by swipeable card rows) */
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* iOS safe-area helpers for the bottom navigation */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .h-safe-bottom {
+    height: env(safe-area-inset-bottom, 0px);
+  }
+
   /* Animated blueprint grid used on the login page */
   .blueprint-grid {
     background-image:

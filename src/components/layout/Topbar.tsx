@@ -1,4 +1,4 @@
-import { Menu, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { useAuth } from "@/store/auth";
@@ -11,11 +11,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-interface TopbarProps {
-  onOpenSidebar: () => void;
-}
-
-export function Topbar({ onOpenSidebar }: TopbarProps) {
+export function Topbar() {
   const user = useAuth((s) => s.user);
   const { collapsed, toggle } = useSidebar();
   const title = usePageMetaStore((s) => s.title);
@@ -25,17 +21,6 @@ export function Topbar({ onOpenSidebar }: TopbarProps) {
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-2 border-b border-border bg-background/85 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/70 md:px-6">
-      {/* Mobile: hamburger */}
-      <Button
-        variant="ghost"
-        size="icon"
-        className="md:hidden"
-        onClick={onOpenSidebar}
-        aria-label="Open menu"
-      >
-        <Menu className="h-5 w-5" />
-      </Button>
-
       {/* Desktop: collapse toggle */}
       <Button
         variant="ghost"

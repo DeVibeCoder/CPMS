@@ -9,11 +9,19 @@ import {
   FilePlus2,
   MoreHorizontal,
   Pencil,
+  Plus,
   Printer,
   Search,
+  SlidersHorizontal,
   Trash2,
 } from "lucide-react";
 import { usePageMeta } from "@/store/pageMeta";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,8 +82,10 @@ export default function ReportHistoryPage() {
   const [page, setPage] = useState(1);
   const [toDelete, setToDelete] = useState<Report | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   usePageMeta("Report History", "Manage all daily cement stock reports.");
+  const activeFilters = (month !== "all" ? 1 : 0) + (year !== "all" ? 1 : 0);
 
   const load = () => repo.listReports().then(setReports);
   useEffect(() => {
@@ -232,7 +242,8 @@ export default function ReportHistoryPage() {
                 className="h-9 pl-9"
               />
             </div>
-            <div className="flex gap-2">
+            {/* Desktop filters */}
+            <div className="hidden gap-2 md:flex">
               <Select
                 value={month}
                 onValueChange={(v) => {
@@ -272,8 +283,24 @@ export default function ReportHistoryPage() {
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Mobile filters button */}
             <Button
-              className="shrink-0 sm:ml-1"
+              variant="outline"
+              className="shrink-0 md:hidden"
+              onClick={() => setFiltersOpen(true)}
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+              Filters
+              {activeFilters > 0 && (
+                <span className="ml-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[11px] font-semibold text-primary-foreground">
+                  {activeFilters}
+                </span>
+              )}
+            </Button>
+
+            <Button
+              className="hidden shrink-0 sm:ml-1 md:inline-flex"
               onClick={() => navigate("/reports/new")}
             >
               <FilePlus2 className="h-4 w-4" />
@@ -379,20 +406,28 @@ export default function ReportHistoryPage() {
                 </Table>
               </div>
 
-              {/* Mobile cards */}
-              <div className="divide-y divide-border md:hidden">
+              {/* Mobile report cards */}
+              <div className="space-y-3 p-3 md:hidden">
                 {pageRows.map((r) => {
                   const t = computeTotals(r.data);
                   return (
-                    <div key={r.id} className="flex items-center gap-3 p-4">
-                      <button
-                        className="min-w-0 flex-1 text-left"
-                        onClick={() => navigate(`/reports/${r.id}`)}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold">
+                    <div
+                      key={r.id}
+                      className="rounded-xl border border-border bg-card p-4 shadow-sm"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <button
+                          className="min-w-0 flex-1 text-left"
+                          onClick={() => navigate(`/reports/${r.id}`)}
+                        >
+                          <div className="text-base font-semibold">
                             {format(parseISO(r.date), "dd MMM yyyy")}
-                          </span>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {format(parseISO(r.date), "EEEE")}
+                          </div>
+                        </button>
+                        <div className="flex items-center gap-1">
                           <Badge
                             variant={
                               r.status === "final" ? "success" : "secondary"
@@ -401,13 +436,29 @@ export default function ReportHistoryPage() {
                           >
                             {r.status}
                           </Badge>
+                          <RowActionsMenu r={r} />
                         </div>
-                        <div className="mt-0.5 text-xs text-muted-foreground">
-                          {r.createdByName} ·{" "}
-                          {formatNumber(t.totalCementMt, { decimals: 0 })} MT
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-y-2 border-t border-border pt-3 text-xs">
+                        <div>
+                          <div className="text-muted-foreground">Created By</div>
+                          <div className="font-medium text-foreground">
+                            {r.createdByName}
+                          </div>
                         </div>
-                      </button>
-                      <RowActionsMenu r={r} />
+                        <div>
+                          <div className="text-muted-foreground">Cement</div>
+                          <div className="font-medium tabular-nums text-foreground">
+                            {formatNumber(t.totalCementMt, { decimals: 0 })} MT
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-muted-foreground">Last Updated</div>
+                          <div className="font-medium text-foreground">
+                            {format(parseISO(r.updatedAt), "dd MMM, HH:mm")}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   );
                 })}
@@ -448,6 +499,91 @@ export default function ReportHistoryPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Mobile: floating create button */}
+      <button
+        onClick={() => navigate("/reports/new")}
+        aria-label="Create new report"
+        className="fixed bottom-20 right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-elevated transition-transform active:scale-95 md:hidden"
+      >
+        <Plus className="h-6 w-6" />
+      </button>
+
+      {/* Mobile: filters bottom sheet */}
+      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>Filter reports</SheetTitle>
+          </SheetHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Month</label>
+              <Select
+                value={month}
+                onValueChange={(v) => {
+                  setMonth(v);
+                  resetPage();
+                }}
+              >
+                <SelectTrigger className="h-11">
+                  <SelectValue placeholder="Month" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Months</SelectItem>
+                  {MONTHS.map((m, i) => (
+                    <SelectItem key={m} value={String(i)}>
+                      {m}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Year</label>
+              <Select
+                value={year}
+                onValueChange={(v) => {
+                  setYear(v);
+                  resetPage();
+                }}
+              >
+                <SelectTrigger className="h-11">
+                  <SelectValue placeholder="Year" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Years</SelectItem>
+                  {years.map((y) => (
+                    <SelectItem key={y} value={y}>
+                      {y}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button
+                variant="outline"
+                className="flex-1"
+                size="lg"
+                onClick={() => {
+                  setMonth("all");
+                  setYear("all");
+                  resetPage();
+                }}
+              >
+                Clear
+              </Button>
+              <Button
+                className="flex-1"
+                size="lg"
+                onClick={() => setFiltersOpen(false)}
+              >
+                Show {filtered.length} result{filtered.length === 1 ? "" : "s"}
+              </Button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <ConfirmDialog
         open={Boolean(toDelete)}

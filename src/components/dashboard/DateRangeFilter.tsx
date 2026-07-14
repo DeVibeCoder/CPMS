@@ -6,7 +6,7 @@ import {
   endOfDay,
   format,
 } from "date-fns";
-import { Calendar } from "lucide-react";
+import { Calendar, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -14,6 +14,14 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { useIsMobile } from "@/hooks/useMediaQuery";
+import { cn } from "@/lib/utils";
 import type { DateRange } from "@/lib/analytics";
 
 export type PresetKey =
@@ -49,17 +57,25 @@ export function presetRange(key: PresetKey): DateRange {
   }
 }
 
+function presetLabel(key: PresetKey): string {
+  return key === "custom"
+    ? "Custom range"
+    : (PRESETS.find((p) => p.key === key)?.label ?? "Filter");
+}
+
 interface DateRangeFilterProps {
   value: PresetKey;
   onChange: (key: PresetKey, range: DateRange) => void;
 }
 
 export function DateRangeFilter({ value, onChange }: DateRangeFilterProps) {
+  const isMobile = useIsMobile();
   const [customFrom, setCustomFrom] = useState(
     format(subDays(new Date(), 7), "yyyy-MM-dd"),
   );
   const [customTo, setCustomTo] = useState(format(new Date(), "yyyy-MM-dd"));
   const [open, setOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   const applyCustom = () => {
     onChange("custom", {
@@ -67,8 +83,80 @@ export function DateRangeFilter({ value, onChange }: DateRangeFilterProps) {
       to: endOfDay(new Date(customTo)),
     });
     setOpen(false);
+    setSheetOpen(false);
   };
 
+  // ---------- Mobile: a button that opens a bottom sheet ----------
+  if (isMobile) {
+    return (
+      <>
+        <Button
+          variant="outline"
+          className="w-full justify-between"
+          onClick={() => setSheetOpen(true)}
+        >
+          <span className="flex items-center gap-2">
+            <SlidersHorizontal className="h-4 w-4" />
+            Period
+          </span>
+          <span className="text-muted-foreground">{presetLabel(value)}</span>
+        </Button>
+
+        <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+          <SheetContent>
+            <SheetHeader>
+              <SheetTitle>Select period</SheetTitle>
+            </SheetHeader>
+            <div className="grid grid-cols-2 gap-2">
+              {PRESETS.map((p) => (
+                <button
+                  key={p.key}
+                  onClick={() => {
+                    onChange(p.key, presetRange(p.key));
+                    setSheetOpen(false);
+                  }}
+                  className={cn(
+                    "rounded-xl border-2 px-3 py-3 text-sm font-medium transition-colors",
+                    value === p.key
+                      ? "border-primary bg-primary/5 text-primary"
+                      : "border-border text-foreground",
+                  )}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 space-y-3 border-t border-border pt-4">
+              <div className="text-sm font-medium">Custom range</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground">From</label>
+                  <Input
+                    type="date"
+                    value={customFrom}
+                    onChange={(e) => setCustomFrom(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground">To</label>
+                  <Input
+                    type="date"
+                    value={customTo}
+                    onChange={(e) => setCustomTo(e.target.value)}
+                  />
+                </div>
+              </div>
+              <Button className="w-full" size="lg" onClick={applyCustom}>
+                Apply Custom Range
+              </Button>
+            </div>
+          </SheetContent>
+        </Sheet>
+      </>
+    );
+  }
+
+  // ---------- Desktop / tablet: inline chips ----------
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <div className="flex items-center rounded-lg border border-border bg-card p-0.5">

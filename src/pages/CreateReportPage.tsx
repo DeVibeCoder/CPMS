@@ -453,18 +453,14 @@ export default function CreateReportPage() {
   const activeStep = Math.min(step, sections.length - 1);
 
   return (
-    <div className="pb-20 md:pb-0">
-      {/* Top actions */}
-      <div className="mb-5 flex items-center justify-between gap-2">
+    <div className="pb-24 md:pb-0">
+      {/* Top actions (desktop — mobile uses the app bar + sticky save) */}
+      <div className="mb-5 hidden items-center justify-between gap-2 md:flex">
         <Button variant="outline" onClick={() => navigate(-1)}>
           <ArrowLeft className="h-4 w-4" />
           Back
         </Button>
-        <Button
-          onClick={onSave}
-          disabled={saving}
-          className="hidden md:inline-flex"
-        >
+        <Button onClick={onSave} disabled={saving}>
           {saving ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
@@ -475,7 +471,7 @@ export default function CreateReportPage() {
       </div>
 
       {/* Meta bar */}
-      <Card className="mb-6">
+      <Card className="mb-5">
         <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-end">
           <div className="space-y-1.5">
             <Label htmlFor="date">Report Date</Label>
@@ -547,37 +543,42 @@ export default function CreateReportPage() {
           ))}
         </div>
         {sections[activeStep].node}
-        <div className="mt-4 flex gap-2">
-          <Button
-            variant="outline"
-            className="flex-1"
-            disabled={activeStep === 0}
-            onClick={() => setStep((s) => Math.max(0, s - 1))}
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Previous
-          </Button>
-          {activeStep < sections.length - 1 ? (
-            <Button
-              className="flex-1"
-              onClick={() =>
-                setStep((s) => Math.min(sections.length - 1, s + 1))
-              }
-            >
-              Next
-              <ChevronRight className="h-4 w-4" />
-            </Button>
+      </div>
+
+      {/* Mobile: sticky action bar — Save is always accessible */}
+      <div className="fixed inset-x-0 bottom-0 z-30 flex items-center gap-2 border-t border-border bg-card/95 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] backdrop-blur md:hidden">
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-11 w-11 shrink-0"
+          aria-label="Previous section"
+          disabled={activeStep === 0}
+          onClick={() => setStep((s) => Math.max(0, s - 1))}
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </Button>
+        <Button
+          className="h-11 flex-1"
+          onClick={onSave}
+          disabled={saving}
+        >
+          {saving ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
-            <Button className="flex-1" onClick={onSave} disabled={saving}>
-              {saving ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4" />
-              )}
-              {isEdit ? "Save" : "Save Report"}
-            </Button>
+            <Save className="h-4 w-4" />
           )}
-        </div>
+          {isEdit ? "Save Changes" : "Save Report"}
+        </Button>
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-11 w-11 shrink-0"
+          aria-label="Next section"
+          disabled={activeStep === sections.length - 1}
+          onClick={() => setStep((s) => Math.min(sections.length - 1, s + 1))}
+        >
+          <ChevronRight className="h-5 w-5" />
+        </Button>
       </div>
 
       {/* Sticky save bar (desktop / tablet — mobile uses the wizard nav) */}

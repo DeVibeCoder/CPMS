@@ -20,6 +20,8 @@ import {
   CalendarClock,
 } from "lucide-react";
 import { usePageMeta } from "@/store/pageMeta";
+import { useIsMobile } from "@/hooks/useMediaQuery";
+import { SwipeCards } from "@/components/mobile/SwipeCards";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { TrendChart, CHART_COLORS } from "@/components/dashboard/TrendChart";
 import {
@@ -47,6 +49,7 @@ export default function DashboardPage() {
   const [range, setRange] = useState(presetRange("7d"));
 
   usePageMeta("Dashboard", "View today's stock summary and analytics.");
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     repo.listReports().then(setReports);
@@ -166,176 +169,245 @@ export default function DashboardPage() {
       ]
     : [];
 
+  const contextLine = kpiReport
+    ? `Showing figures from ${format(parseISO(kpiReport.date), isMobile ? "dd MMM yyyy" : "EEEE, dd MMM yyyy")}${
+        todaysReport ? " (today)" : " (latest)"
+      }`
+    : "No reports yet — create your first daily stock report.";
+
+  const todayBanner = (
+    <Card className="border-l-4 border-l-primary">
+      <CardContent className="flex flex-col items-start justify-between gap-3 p-4 sm:flex-row sm:items-center">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <CalendarClock className="h-5 w-5" />
+          </span>
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              Today's Report
+              {todaysReport ? (
+                <Badge variant="success">Submitted</Badge>
+              ) : (
+                <Badge variant="warning">Pending</Badge>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {todaysReport
+                ? `Recorded by ${todaysReport.createdByName} at ${format(parseISO(todaysReport.createdAt), "HH:mm")}`
+                : "No stock report has been recorded for today yet."}
+            </p>
+          </div>
+        </div>
+        <div className="flex w-full gap-2 sm:w-auto">
+          {todaysReport ? (
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={() => navigate(`/reports/${todaysReport.id}`)}
+            >
+              <FileText className="h-4 w-4" />
+              View Today's Report
+            </Button>
+          ) : (
+            <Button
+              className="w-full sm:w-auto"
+              onClick={() => navigate("/reports/new")}
+            >
+              <FilePlus2 className="h-4 w-4" />
+              Create Today's Report
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  const chartNodes = [
+    <TrendChart
+      key="stock"
+      title="Current Stock Trend"
+      data={filteredTrend}
+      type="area"
+      decimals={0}
+      series={[
+        {
+          key: "currentStock",
+          name: "Silo Balance (MT)",
+          color: CHART_COLORS.emerald,
+        },
+      ]}
+    />,
+    <TrendChart
+      key="pvs"
+      title="Production vs Sales"
+      data={filteredTrend}
+      type="area"
+      decimals={0}
+      series={[
+        { key: "production", name: "Production (MT)", color: CHART_COLORS.blue },
+        { key: "sales", name: "Sales (MT)", color: CHART_COLORS.amber },
+      ]}
+    />,
+    <TrendChart
+      key="cement"
+      title="Cement Stock Trend"
+      data={filteredTrend}
+      type="area"
+      decimals={0}
+      series={[
+        {
+          key: "totalCementMt",
+          name: "Total Cement (MT)",
+          color: CHART_COLORS.violet,
+        },
+      ]}
+    />,
+    <TrendChart
+      key="50kg"
+      title="50KG Bags Stock Trend"
+      data={filteredTrend}
+      type="bar"
+      decimals={0}
+      series={[{ key: "bags50kg", name: "50KG Bags", color: CHART_COLORS.blue }]}
+    />,
+  ];
+
+  const recentCard = (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between space-y-0">
+        <CardTitle>Recent Reports</CardTitle>
+        <Button variant="ghost" size="sm" asChild>
+          <Link to="/reports">
+            View all <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        </Button>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="divide-y divide-border">
+          {recent.map((r) => {
+            const t = computeTotals(r.data);
+            return (
+              <button
+                key={r.id}
+                onClick={() => navigate(`/reports/${r.id}`)}
+                className="flex w-full items-center gap-4 px-4 py-3.5 text-left transition-colors hover:bg-muted/50 active:bg-muted"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <FileText className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium">
+                    {format(parseISO(r.date), "dd MMM yyyy")}
+                  </div>
+                  <div className="truncate text-xs text-muted-foreground">
+                    {r.createdByName} ·{" "}
+                    {formatNumber(t.totalCementMt, { decimals: 0 })} MT
+                  </div>
+                </div>
+                <Badge
+                  variant={r.status === "final" ? "success" : "secondary"}
+                  className="capitalize"
+                >
+                  {r.status}
+                </Badge>
+              </button>
+            );
+          })}
+          {recent.length === 0 && (
+            <div className="px-5 py-10 text-center text-sm text-muted-foreground">
+              No reports yet.
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  // ---------- Mobile: stacked, swipeable, one-handed ----------
+  if (isMobile) {
+    return (
+      <div className="space-y-4">
+        {todayBanner}
+
+        <DateRangeFilter value={preset} onChange={onRange} />
+
+        <div className="grid grid-cols-1 gap-3">
+          {kpis.map((k) => (
+            <StatCard key={k.title} {...k} />
+          ))}
+        </div>
+
+        <SwipeCards>{chartNodes}</SwipeCards>
+
+        {/* Quick actions — large touch targets */}
+        <div className="grid grid-cols-2 gap-3">
+          <Button
+            size="lg"
+            className="h-14 flex-col gap-1"
+            onClick={() => navigate("/reports/new")}
+          >
+            <FilePlus2 className="h-5 w-5" />
+            <span className="text-xs">Create</span>
+          </Button>
+          <Button
+            size="lg"
+            variant="outline"
+            className="h-14 flex-col gap-1"
+            disabled={!kpiReport}
+            onClick={() => kpiReport && navigate(`/reports/${kpiReport.id}`)}
+          >
+            <FileText className="h-5 w-5" />
+            <span className="text-xs">Latest</span>
+          </Button>
+          <Button
+            size="lg"
+            variant="outline"
+            className="h-14 flex-col gap-1"
+            disabled={!kpiReport}
+            onClick={() => kpiReport && downloadReportPdf(kpiReport, settings)}
+          >
+            <Download className="h-5 w-5" />
+            <span className="text-xs">PDF</span>
+          </Button>
+          <Button
+            size="lg"
+            variant="outline"
+            className="h-14 flex-col gap-1"
+            disabled={!kpiReport}
+            onClick={() => kpiReport && printReportPdf(kpiReport, settings)}
+          >
+            <Printer className="h-5 w-5" />
+            <span className="text-xs">Print</span>
+          </Button>
+        </div>
+
+        {recentCard}
+      </div>
+    );
+  }
+
+  // ---------- Desktop / tablet ----------
   return (
     <div>
-      {/* Toolbar: context + date/period filter */}
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-muted-foreground">
-          {kpiReport
-            ? `Showing figures from ${format(parseISO(kpiReport.date), "EEEE, dd MMM yyyy")}${
-                todaysReport ? " (today)" : " (latest report)"
-              }`
-            : "No reports yet — create your first daily stock report."}
-        </p>
+        <p className="text-sm text-muted-foreground">{contextLine}</p>
         <DateRangeFilter value={preset} onChange={onRange} />
       </div>
 
-      {/* Today's report status banner */}
-      <Card className="mb-6 border-l-4 border-l-primary">
-        <CardContent className="flex flex-col items-start justify-between gap-3 p-4 sm:flex-row sm:items-center">
-          <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <CalendarClock className="h-5 w-5" />
-            </span>
-            <div>
-              <div className="flex items-center gap-2 text-sm font-semibold">
-                Today's Report
-                {todaysReport ? (
-                  <Badge variant="success">Submitted</Badge>
-                ) : (
-                  <Badge variant="warning">Pending</Badge>
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {todaysReport
-                  ? `Recorded by ${todaysReport.createdByName} at ${format(parseISO(todaysReport.createdAt), "HH:mm")}`
-                  : "No stock report has been recorded for today yet."}
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            {todaysReport ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate(`/reports/${todaysReport.id}`)}
-              >
-                <FileText className="h-4 w-4" />
-                View Today's Report
-              </Button>
-            ) : (
-              <Button size="sm" onClick={() => navigate("/reports/new")}>
-                <FilePlus2 className="h-4 w-4" />
-                Create Today's Report
-              </Button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+      <div className="mb-6">{todayBanner}</div>
 
-      {/* KPI grid — stacked on mobile, denser on larger screens */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {kpis.map((k) => (
           <StatCard key={k.title} {...k} />
         ))}
       </div>
 
-      {/* Charts */}
       <div className="mt-6 grid grid-cols-1 gap-5 xl:grid-cols-2">
-        <TrendChart
-          title="Current Stock Trend"
-          data={filteredTrend}
-          type="area"
-          decimals={0}
-          series={[
-            {
-              key: "currentStock",
-              name: "Silo Balance (MT)",
-              color: CHART_COLORS.emerald,
-            },
-          ]}
-        />
-        <TrendChart
-          title="Production vs Sales"
-          data={filteredTrend}
-          type="area"
-          decimals={0}
-          series={[
-            { key: "production", name: "Production (MT)", color: CHART_COLORS.blue },
-            { key: "sales", name: "Sales (MT)", color: CHART_COLORS.amber },
-          ]}
-        />
-        <TrendChart
-          title="Cement Stock Trend"
-          data={filteredTrend}
-          type="area"
-          decimals={0}
-          series={[
-            {
-              key: "totalCementMt",
-              name: "Total Cement (MT)",
-              color: CHART_COLORS.violet,
-            },
-          ]}
-        />
-        <TrendChart
-          title="50KG Bags Stock Trend"
-          data={filteredTrend}
-          type="bar"
-          decimals={0}
-          series={[
-            { key: "bags50kg", name: "50KG Bags", color: CHART_COLORS.blue },
-          ]}
-        />
+        {chartNodes}
       </div>
 
-      {/* Recent + Quick actions */}
       <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex-row items-center justify-between space-y-0">
-            <CardTitle>Recent Reports</CardTitle>
-            <Button variant="ghost" size="sm" asChild>
-              <Link to="/reports">
-                View all <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            </Button>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="divide-y divide-border">
-              {recent.map((r) => {
-                const t = computeTotals(r.data);
-                return (
-                  <button
-                    key={r.id}
-                    onClick={() => navigate(`/reports/${r.id}`)}
-                    className="flex w-full items-center gap-4 px-5 py-3 text-left transition-colors hover:bg-muted/50"
-                  >
-                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                      <FileText className="h-4 w-4" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium">
-                        {format(parseISO(r.date), "dd MMM yyyy")}
-                      </div>
-                      <div className="truncate text-xs text-muted-foreground">
-                        {r.createdByName}
-                      </div>
-                    </div>
-                    <div className="hidden text-right sm:block">
-                      <div className="text-xs text-muted-foreground">
-                        Cement
-                      </div>
-                      <div className="text-sm font-semibold tabular-nums">
-                        {formatNumber(t.totalCementMt, { decimals: 0 })} MT
-                      </div>
-                    </div>
-                    <Badge
-                      variant={r.status === "final" ? "success" : "secondary"}
-                      className="capitalize"
-                    >
-                      {r.status}
-                    </Badge>
-                  </button>
-                );
-              })}
-              {recent.length === 0 && (
-                <div className="px-5 py-10 text-center text-sm text-muted-foreground">
-                  No reports yet.
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="lg:col-span-2">{recentCard}</div>
 
         <Card>
           <CardHeader>
@@ -359,9 +431,7 @@ export default function DashboardPage() {
               variant="outline"
               className="justify-start"
               disabled={!kpiReport}
-              onClick={() =>
-                kpiReport && downloadReportPdf(kpiReport, settings)
-              }
+              onClick={() => kpiReport && downloadReportPdf(kpiReport, settings)}
             >
               <Download className="h-4 w-4" />
               Generate PDF
