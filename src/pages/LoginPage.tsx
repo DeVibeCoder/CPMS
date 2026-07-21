@@ -42,13 +42,6 @@ export default function LoginPage() {
     if (ok) navigate(from, { replace: true });
   };
 
-  const quickFill = (role: "admin" | "editor") => {
-    setEmail(
-      role === "admin" ? "admin@cementplant.com" : "editor@cementplant.com",
-    );
-    setPassword(role === "admin" ? "admin123" : "editor123");
-  };
-
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 p-4">
       {/* Gradient background */}
@@ -215,32 +208,6 @@ export default function LoginPage() {
               {loading ? "Signing in…" : "Sign in"}
             </Button>
           </form>
-
-          <div className="mt-6 rounded-lg border border-dashed border-border bg-muted/40 p-3">
-            <p className="mb-2 text-xs font-medium text-muted-foreground">
-              Demo accounts — click to fill:
-            </p>
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="flex-1"
-                onClick={() => quickFill("admin")}
-              >
-                Admin
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="flex-1"
-                onClick={() => quickFill("editor")}
-              >
-                Editor
-              </Button>
-            </div>
-          </div>
         </motion.div>
       </div>
     </div>

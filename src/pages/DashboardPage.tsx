@@ -35,6 +35,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { repo } from "@/data";
 import { useSettings } from "@/store/settings";
+import { useAuth, can } from "@/store/auth";
 import type { Report } from "@/types";
 import { computeTotals } from "@/lib/calculations";
 import { buildTrend, filterByRange, deltaPct } from "@/lib/analytics";
@@ -44,6 +45,9 @@ import { formatNumber } from "@/lib/utils";
 export default function DashboardPage() {
   const navigate = useNavigate();
   const settings = useSettings((s) => s.settings);
+  const role = useAuth((s) => s.user?.role);
+  const canCreate = can(role, "createReports");
+  const canExport = can(role, "exportPdf");
   const [reports, setReports] = useState<Report[] | null>(null);
   const [preset, setPreset] = useState<PresetKey>("7d");
   const [range, setRange] = useState(presetRange("7d"));
@@ -209,13 +213,15 @@ export default function DashboardPage() {
               View Today's Report
             </Button>
           ) : (
-            <Button
-              className="w-full sm:w-auto"
-              onClick={() => navigate("/reports/new")}
-            >
-              <FilePlus2 className="h-4 w-4" />
-              Create Today's Report
-            </Button>
+            canCreate && (
+              <Button
+                className="w-full sm:w-auto"
+                onClick={() => navigate("/reports/new")}
+              >
+                <FilePlus2 className="h-4 w-4" />
+                Create Today's Report
+              </Button>
+            )
           )}
         </div>
       </CardContent>
@@ -341,14 +347,16 @@ export default function DashboardPage() {
 
         {/* Quick actions — large touch targets */}
         <div className="grid grid-cols-2 gap-3">
-          <Button
-            size="lg"
-            className="h-14 flex-col gap-1"
-            onClick={() => navigate("/reports/new")}
-          >
-            <FilePlus2 className="h-5 w-5" />
-            <span className="text-xs">Create</span>
-          </Button>
+          {canCreate && (
+            <Button
+              size="lg"
+              className="h-14 flex-col gap-1"
+              onClick={() => navigate("/reports/new")}
+            >
+              <FilePlus2 className="h-5 w-5" />
+              <span className="text-xs">Create</span>
+            </Button>
+          )}
           <Button
             size="lg"
             variant="outline"
@@ -359,26 +367,30 @@ export default function DashboardPage() {
             <FileText className="h-5 w-5" />
             <span className="text-xs">Latest</span>
           </Button>
-          <Button
-            size="lg"
-            variant="outline"
-            className="h-14 flex-col gap-1"
-            disabled={!kpiReport}
-            onClick={() => kpiReport && downloadReportPdf(kpiReport, settings)}
-          >
-            <Download className="h-5 w-5" />
-            <span className="text-xs">PDF</span>
-          </Button>
-          <Button
-            size="lg"
-            variant="outline"
-            className="h-14 flex-col gap-1"
-            disabled={!kpiReport}
-            onClick={() => kpiReport && printReportPdf(kpiReport, settings)}
-          >
-            <Printer className="h-5 w-5" />
-            <span className="text-xs">Print</span>
-          </Button>
+          {canExport && (
+            <>
+              <Button
+                size="lg"
+                variant="outline"
+                className="h-14 flex-col gap-1"
+                disabled={!kpiReport}
+                onClick={() => kpiReport && downloadReportPdf(kpiReport, settings)}
+              >
+                <Download className="h-5 w-5" />
+                <span className="text-xs">PDF</span>
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                className="h-14 flex-col gap-1"
+                disabled={!kpiReport}
+                onClick={() => kpiReport && printReportPdf(kpiReport, settings)}
+              >
+                <Printer className="h-5 w-5" />
+                <span className="text-xs">Print</span>
+              </Button>
+            </>
+          )}
         </div>
 
         {recentCard}
@@ -414,10 +426,15 @@ export default function DashboardPage() {
             <CardTitle>Quick Actions</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-1 gap-2.5">
-            <Button className="justify-start" onClick={() => navigate("/reports/new")}>
-              <FilePlus2 className="h-4 w-4" />
-              Create Report
-            </Button>
+            {canCreate && (
+              <Button
+                className="justify-start"
+                onClick={() => navigate("/reports/new")}
+              >
+                <FilePlus2 className="h-4 w-4" />
+                Create Report
+              </Button>
+            )}
             <Button
               variant="outline"
               className="justify-start"
@@ -427,24 +444,28 @@ export default function DashboardPage() {
               <FileText className="h-4 w-4" />
               {todaysReport ? "Today's Report" : "Latest Report"}
             </Button>
-            <Button
-              variant="outline"
-              className="justify-start"
-              disabled={!kpiReport}
-              onClick={() => kpiReport && downloadReportPdf(kpiReport, settings)}
-            >
-              <Download className="h-4 w-4" />
-              Generate PDF
-            </Button>
-            <Button
-              variant="outline"
-              className="justify-start"
-              disabled={!kpiReport}
-              onClick={() => kpiReport && printReportPdf(kpiReport, settings)}
-            >
-              <Printer className="h-4 w-4" />
-              Print
-            </Button>
+            {canExport && (
+              <>
+                <Button
+                  variant="outline"
+                  className="justify-start"
+                  disabled={!kpiReport}
+                  onClick={() => kpiReport && downloadReportPdf(kpiReport, settings)}
+                >
+                  <Download className="h-4 w-4" />
+                  Generate PDF
+                </Button>
+                <Button
+                  variant="outline"
+                  className="justify-start"
+                  disabled={!kpiReport}
+                  onClick={() => kpiReport && printReportPdf(kpiReport, settings)}
+                >
+                  <Printer className="h-4 w-4" />
+                  Print
+                </Button>
+              </>
+            )}
             <Button
               variant="outline"
               className="justify-start"

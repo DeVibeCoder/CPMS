@@ -71,6 +71,10 @@ export default function ReportHistoryPage() {
   const navigate = useNavigate();
   const user = useAuth((s) => s.user);
   const settings = useSettings((s) => s.settings);
+  const canCreate = can(user?.role, "createReports");
+  const canEdit = can(user?.role, "editReports");
+  const canExport = can(user?.role, "exportPdf");
+  const canDelete = can(user?.role, "deleteReports");
 
   const [reports, setReports] = useState<Report[] | null>(null);
   const [query, setQuery] = useState("");
@@ -183,21 +187,31 @@ export default function ReportHistoryPage() {
         <DropdownMenuItem onClick={() => navigate(`/reports/${r.id}`)}>
           <Eye className="h-4 w-4" /> View
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => navigate(`/reports/${r.id}/edit`)}>
-          <Pencil className="h-4 w-4" /> Edit
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => settings && printReportPdf(r, settings)}>
-          <Printer className="h-4 w-4" /> Print
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => settings && downloadReportPdf(r, settings)}
-        >
-          <Download className="h-4 w-4" /> Download PDF
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => doDuplicate(r)}>
-          <Copy className="h-4 w-4" /> Duplicate
-        </DropdownMenuItem>
-        {can(user?.role, "deleteReports") && (
+        {canEdit && (
+          <DropdownMenuItem onClick={() => navigate(`/reports/${r.id}/edit`)}>
+            <Pencil className="h-4 w-4" /> Edit
+          </DropdownMenuItem>
+        )}
+        {canExport && (
+          <>
+            <DropdownMenuItem
+              onClick={() => settings && printReportPdf(r, settings)}
+            >
+              <Printer className="h-4 w-4" /> Print
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => settings && downloadReportPdf(r, settings)}
+            >
+              <Download className="h-4 w-4" /> Download PDF
+            </DropdownMenuItem>
+          </>
+        )}
+        {canCreate && (
+          <DropdownMenuItem onClick={() => doDuplicate(r)}>
+            <Copy className="h-4 w-4" /> Duplicate
+          </DropdownMenuItem>
+        )}
+        {canDelete && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem
@@ -299,13 +313,15 @@ export default function ReportHistoryPage() {
               )}
             </Button>
 
-            <Button
-              className="hidden shrink-0 sm:ml-1 md:inline-flex"
-              onClick={() => navigate("/reports/new")}
-            >
-              <FilePlus2 className="h-4 w-4" />
-              Create New Report
-            </Button>
+            {canCreate && (
+              <Button
+                className="hidden shrink-0 sm:ml-1 md:inline-flex"
+                onClick={() => navigate("/reports/new")}
+              >
+                <FilePlus2 className="h-4 w-4" />
+                Create New Report
+              </Button>
+            )}
           </div>
 
           {!reports ? (
@@ -501,13 +517,15 @@ export default function ReportHistoryPage() {
       </Card>
 
       {/* Mobile: floating create button */}
-      <button
-        onClick={() => navigate("/reports/new")}
-        aria-label="Create new report"
-        className="fixed bottom-20 right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-elevated transition-transform active:scale-95 md:hidden"
-      >
-        <Plus className="h-6 w-6" />
-      </button>
+      {canCreate && (
+        <button
+          onClick={() => navigate("/reports/new")}
+          aria-label="Create new report"
+          className="fixed bottom-20 right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-elevated transition-transform active:scale-95 md:hidden"
+        >
+          <Plus className="h-6 w-6" />
+        </button>
+      )}
 
       {/* Mobile: filters bottom sheet */}
       <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>

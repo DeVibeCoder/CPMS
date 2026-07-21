@@ -53,6 +53,25 @@ export function initials(name: string): string {
 }
 
 /** Human-readable role label. */
-export function roleLabel(role: "admin" | "editor"): string {
-  return role === "admin" ? "Administrator" : "Editor";
+export function roleLabel(role: "admin" | "dispatch" | "viewer"): string {
+  switch (role) {
+    case "admin":
+      return "Administrator";
+    case "dispatch":
+      return "Dispatch";
+    case "viewer":
+      return "Viewer";
+  }
+}
+
+/** One-line description of what a role can do (used in the Users form). */
+export function roleDescription(role: "admin" | "dispatch" | "viewer"): string {
+  switch (role) {
+    case "admin":
+      return "Full access — reports, users, settings and backups.";
+    case "dispatch":
+      return "Create, edit and generate reports. View only otherwise.";
+    case "viewer":
+      return "Read-only access to reports and dashboards.";
+  }
 }

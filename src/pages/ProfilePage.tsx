@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { format, parseISO } from "date-fns";
 import {
+  Eye,
   KeyRound,
   Loader2,
   Palette,
@@ -181,6 +182,8 @@ export default function ProfilePage() {
             >
               {user.role === "admin" ? (
                 <Shield className="h-3 w-3" />
+              ) : user.role === "viewer" ? (
+                <Eye className="h-3 w-3" />
               ) : (
                 <UserCog className="h-3 w-3" />
               )}

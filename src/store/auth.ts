@@ -25,6 +25,7 @@ interface AuthState {
 
 /** Role → permission capability map. Single source of truth for the UI guards. */
 export const PERMISSIONS = {
+  // Full access.
   admin: {
     deleteReports: true,
     manageUsers: true,
@@ -34,7 +35,9 @@ export const PERMISSIONS = {
     editReports: true,
     exportPdf: true,
   },
-  editor: {
+  // Can create, edit and generate (print/export) reports — but not delete,
+  // manage users, or change settings.
+  dispatch: {
     deleteReports: false,
     manageUsers: false,
     settings: false,
@@ -42,6 +45,16 @@ export const PERMISSIONS = {
     createReports: true,
     editReports: true,
     exportPdf: true,
+  },
+  // Read-only. Can view everything but change nothing.
+  viewer: {
+    deleteReports: false,
+    manageUsers: false,
+    settings: false,
+    backup: false,
+    createReports: false,
+    editReports: false,
+    exportPdf: false,
   },
 } as const;
 

@@ -24,14 +24,18 @@ npm run preview    # preview the production build
 npm run typecheck  # type-check only
 ```
 
-### Demo accounts
+### Roles & seeded accounts
 
-| Role   | Email                     | Password    | Can do                                            |
-| ------ | ------------------------- | ----------- | ------------------------------------------------- |
-| Admin  | `admin@cementplant.com`   | `admin123`  | Everything: delete, users, settings, backup       |
-| Editor | `editor@cementplant.com`  | `editor123` | Dashboard, create/edit reports, generate PDF, print |
+| Role     | Email                      | Password       | Can do                                                        |
+| -------- | -------------------------- | -------------- | ------------------------------------------------------------ |
+| Admin    | `admin@cementplant.com`    | `admin123`     | Everything: create/edit/delete reports, users, settings, backup |
+| Dispatch | `dispatch@cementplant.com` | `dispatch123`  | View, create/edit reports, generate PDF & print. No users/settings/delete |
+| Viewer   | `viewer@cementplant.com`   | `viewer123`    | Read-only — view reports, dashboards & analytics             |
 
-The login page has one-click "fill demo account" buttons.
+Roles are enforced through the capability map in `src/store/auth.ts`; the UI
+hides actions a role can't perform and the routes are guarded as well. These
+seeded accounts exist for local/dev use only — create real users on the Users
+page and remove the seeds before going live.
 
 ---
 

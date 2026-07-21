@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { format, parseISO } from "date-fns";
-import { Plus, Search, Shield, Trash2, UserCog } from "lucide-react";
+import { Eye, Plus, Search, Shield, Trash2, UserCog } from "lucide-react";
 import { usePageMeta } from "@/store/pageMeta";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -35,8 +35,15 @@ import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { repo } from "@/data";
 import { useAuth } from "@/store/auth";
 import type { Role, User } from "@/types";
-import { initials } from "@/lib/utils";
+import { initials, roleDescription } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
+
+/** Icon shown alongside a role badge. */
+function RoleIcon({ role, className }: { role: Role; className?: string }) {
+  if (role === "admin") return <Shield className={className} />;
+  if (role === "viewer") return <Eye className={className} />;
+  return <UserCog className={className} />;
+}
 
 const AVATAR_COLORS = [
   "#1d4ed8",
@@ -60,7 +67,7 @@ const emptyForm: FormState = {
   name: "",
   email: "",
   password: "",
-  role: "editor",
+  role: "viewer",
   active: true,
 };
 
@@ -193,7 +200,8 @@ export default function UsersPage() {
             <SelectContent>
               <SelectItem value="all">All Roles</SelectItem>
               <SelectItem value="admin">Admin</SelectItem>
-              <SelectItem value="editor">Editor</SelectItem>
+              <SelectItem value="dispatch">Dispatch</SelectItem>
+              <SelectItem value="viewer">Viewer</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -256,11 +264,7 @@ export default function UsersPage() {
                         variant={u.role === "admin" ? "default" : "secondary"}
                         className="gap-1 capitalize"
                       >
-                        {u.role === "admin" ? (
-                          <Shield className="h-3 w-3" />
-                        ) : (
-                          <UserCog className="h-3 w-3" />
-                        )}
+                        <RoleIcon role={u.role} className="h-3 w-3" />
                         {u.role}
                       </Badge>
                     </TableCell>
@@ -330,8 +334,9 @@ export default function UsersPage() {
                       <span className="truncate font-medium">{u.name}</span>
                       <Badge
                         variant={u.role === "admin" ? "default" : "secondary"}
-                        className="capitalize"
+                        className="gap-1 capitalize"
                       >
+                        <RoleIcon role={u.role} className="h-3 w-3" />
                         {u.role}
                       </Badge>
                     </div>
@@ -414,9 +419,13 @@ export default function UsersPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="editor">Editor</SelectItem>
+                    <SelectItem value="dispatch">Dispatch</SelectItem>
+                    <SelectItem value="viewer">Viewer</SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">
+                  {roleDescription(form.role)}
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label>Status</Label>

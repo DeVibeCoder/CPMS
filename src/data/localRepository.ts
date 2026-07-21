@@ -25,13 +25,27 @@ export class LocalRepository implements Repository {
   private read(): Database {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return JSON.parse(raw) as Database;
+      if (raw) return this.migrate(JSON.parse(raw) as Database);
     } catch {
       /* fall through to seed */
     }
     const seeded = seedDatabase();
     this.write(seeded);
     return seeded;
+  }
+
+  /** Bring a stored database up to date with the current schema. */
+  private migrate(db: Database): Database {
+    let changed = false;
+    for (const u of db.users) {
+      // The legacy "editor" role was renamed to "dispatch".
+      if ((u.role as string) === "editor") {
+        u.role = "dispatch";
+        changed = true;
+      }
+    }
+    if (changed) this.write(db);
+    return db;
   }
 
   private write(db: Database): void {

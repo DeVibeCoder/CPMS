@@ -55,9 +55,23 @@ export default function App() {
         >
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/reports" element={<ReportHistoryPage />} />
-          <Route path="/reports/new" element={<CreateReportPage />} />
+          <Route
+            path="/reports/new"
+            element={
+              <RequireCapability capability="createReports">
+                <CreateReportPage />
+              </RequireCapability>
+            }
+          />
           <Route path="/reports/:id" element={<ViewReportPage />} />
-          <Route path="/reports/:id/edit" element={<CreateReportPage />} />
+          <Route
+            path="/reports/:id/edit"
+            element={
+              <RequireCapability capability="editReports">
+                <CreateReportPage />
+              </RequireCapability>
+            }
+          />
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route
             path="/users"

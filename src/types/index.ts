@@ -5,7 +5,13 @@
  * daily manual document, so the JSON store, forms and PDF all agree.
  */
 
-export type Role = "admin" | "editor";
+/**
+ * Access roles:
+ *  - admin    — full access to everything.
+ *  - dispatch — can create, edit and generate (print/export) reports; view only otherwise.
+ *  - viewer   — read-only. Can view reports and dashboards but not change anything.
+ */
+export type Role = "admin" | "dispatch" | "viewer";
 
 export interface User {
   id: string;
