@@ -7,14 +7,12 @@ import {
   LogOut,
   Menu as MenuIcon,
   Settings,
-  Users,
-  UserCircle,
   Moon,
   Sun,
   type LucideIcon,
 } from "lucide-react";
 import { cn, initials, roleLabel } from "@/lib/utils";
-import { useAuth, can, type Capability } from "@/store/auth";
+import { useAuth } from "@/store/auth";
 import { useTheme } from "@/store/theme";
 import {
   Sheet,
@@ -57,13 +55,11 @@ interface MenuLink {
   label: string;
   to: string;
   icon: LucideIcon;
-  requires?: Capability;
 }
 
+// Settings is a hub — Users & Profile are tabs inside it.
 const MENU_LINKS: MenuLink[] = [
-  { label: "Users", to: "/users", icon: Users, requires: "manageUsers" },
-  { label: "Settings", to: "/settings", icon: Settings, requires: "settings" },
-  { label: "Profile", to: "/profile", icon: UserCircle },
+  { label: "Settings", to: "/settings", icon: Settings },
 ];
 
 export function BottomNav() {
@@ -74,12 +70,10 @@ export function BottomNav() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const menuLinks = MENU_LINKS.filter(
-    (l) => !l.requires || can(user?.role, l.requires),
-  );
+  const menuLinks = MENU_LINKS;
   const menuActive =
-    location.pathname.startsWith("/users") ||
     location.pathname.startsWith("/settings") ||
+    location.pathname.startsWith("/users") ||
     location.pathname.startsWith("/profile");
 
   const name = user ? user.displayName || user.name : "";

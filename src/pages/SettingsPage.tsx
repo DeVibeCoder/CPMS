@@ -11,7 +11,6 @@ import {
   Save,
   Upload,
 } from "lucide-react";
-import { usePageMeta } from "@/store/pageMeta";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,8 +33,6 @@ export default function SettingsPage() {
   const [resetting, setResetting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
-
-  usePageMeta("Settings", "Configure application preferences.");
 
   useEffect(() => {
     if (settings && !form) setForm(settings);

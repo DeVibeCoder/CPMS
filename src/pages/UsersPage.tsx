@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { format, parseISO } from "date-fns";
 import { Eye, Plus, Search, Shield, Trash2, UserCog } from "lucide-react";
-import { usePageMeta } from "@/store/pageMeta";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -82,8 +81,6 @@ export default function UsersPage() {
   const [deleting, setDeleting] = useState(false);
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
-
-  usePageMeta("Users", "Manage system users and permissions.");
 
   const load = () => repo.listUsers().then(setUsers);
   useEffect(() => {

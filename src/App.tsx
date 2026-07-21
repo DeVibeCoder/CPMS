@@ -4,6 +4,10 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { RequireAuth, RequireCapability } from "@/components/auth/Guards";
+import {
+  SettingsLayout,
+  SettingsIndex,
+} from "@/components/layout/SettingsLayout";
 import { useAuth } from "@/store/auth";
 import { useSettings } from "@/store/settings";
 import { Logo } from "@/components/common/Logo";
@@ -73,23 +77,38 @@ export default function App() {
             }
           />
           <Route path="/analytics" element={<AnalyticsPage />} />
+
+          {/* Users, general settings & profile now live as tabs under /settings */}
+          <Route path="/settings" element={<SettingsLayout />}>
+            <Route index element={<SettingsIndex />} />
+            <Route
+              path="general"
+              element={
+                <RequireCapability capability="settings">
+                  <SettingsPage />
+                </RequireCapability>
+              }
+            />
+            <Route
+              path="users"
+              element={
+                <RequireCapability capability="manageUsers">
+                  <UsersPage />
+                </RequireCapability>
+              }
+            />
+            <Route path="profile" element={<ProfilePage />} />
+          </Route>
+
+          {/* Back-compat redirects for the old top-level routes */}
           <Route
             path="/users"
-            element={
-              <RequireCapability capability="manageUsers">
-                <UsersPage />
-              </RequireCapability>
-            }
+            element={<Navigate to="/settings/users" replace />}
           />
           <Route
-            path="/settings"
-            element={
-              <RequireCapability capability="settings">
-                <SettingsPage />
-              </RequireCapability>
-            }
+            path="/profile"
+            element={<Navigate to="/settings/profile" replace />}
           />
-          <Route path="/profile" element={<ProfilePage />} />
         </Route>
 
         <Route path="/" element={<Navigate to="/dashboard" replace />} />

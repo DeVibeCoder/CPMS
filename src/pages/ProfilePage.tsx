@@ -10,7 +10,6 @@ import {
   Upload,
   UserCog,
 } from "lucide-react";
-import { usePageMeta } from "@/store/pageMeta";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,8 +44,6 @@ export default function ProfilePage() {
   const [savingPw, setSavingPw] = useState(false);
 
   const fileRef = useRef<HTMLInputElement>(null);
-
-  usePageMeta("Profile", "Manage your account information.");
 
   if (!user) return null;
 
