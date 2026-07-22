@@ -455,18 +455,10 @@ export default function CreateReportPage() {
   return (
     <div className="pb-24 md:pb-0">
       {/* Top actions (desktop — mobile uses the app bar + sticky save) */}
-      <div className="mb-5 hidden items-center justify-between gap-2 md:flex">
+      <div className="mb-5 hidden items-center gap-2 md:flex">
         <Button variant="outline" onClick={() => navigate(-1)}>
           <ArrowLeft className="h-4 w-4" />
           Back
-        </Button>
-        <Button onClick={onSave} disabled={saving}>
-          {saving ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="h-4 w-4" />
-          )}
-          {isEdit ? "Save Changes" : "Save Report"}
         </Button>
       </div>
 
