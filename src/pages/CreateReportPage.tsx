@@ -41,7 +41,7 @@ function TotalRow({
   unit?: string;
 }) {
   return (
-    <div className="flex items-center justify-between rounded-lg bg-primary/8 px-3 py-2">
+    <div className="flex items-center justify-between rounded-lg bg-primary/[8%] px-3 py-2">
       <span className="text-sm font-medium text-foreground">{label}</span>
       <span className="text-sm font-bold tabular-nums text-primary">
         {formatNumber(value, decimals !== undefined ? { decimals } : {})}

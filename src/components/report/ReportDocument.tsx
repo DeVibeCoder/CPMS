@@ -243,7 +243,7 @@ export function ReportDocument({
               <Cell bold>{num(t.chinaTotal)}</Cell>
             </tr>
             <tr>
-              <Cell>Quantity (Nos) Indonesia</Cell>
+              <Cell>Quantity (Nos) Indonesia bags</Cell>
               <Cell>{num(d.emptyBags50kg.indonesia.plant01)}</Cell>
               <Cell>{num(d.emptyBags50kg.indonesia.plant02)}</Cell>
               <Cell>{num(d.emptyBags50kg.indonesia.plant03)}</Cell>

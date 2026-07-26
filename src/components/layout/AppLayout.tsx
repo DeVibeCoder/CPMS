@@ -59,7 +59,7 @@ export function AppLayout() {
       <aside
         className={cn(
           "hidden shrink-0 border-r border-sidebar-border md:block",
-          "transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] will-change-[width]",
+          "transition-[width] duration-300 ease-in-out will-change-[width]",
           collapsed ? "w-[68px]" : "w-64",
         )}
       >

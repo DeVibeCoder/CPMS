@@ -241,7 +241,7 @@ export function generateReportPdf(
           { content: n(t.chinaTotal), bold: true },
         ],
         [
-          "Quantity (Nos) Indonesia",
+          "Quantity (Nos) Indonesia bags",
           n(d.emptyBags50kg.indonesia.plant01),
           n(d.emptyBags50kg.indonesia.plant02),
           n(d.emptyBags50kg.indonesia.plant03),

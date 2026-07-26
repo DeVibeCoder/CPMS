@@ -100,7 +100,7 @@ export function BottomNav() {
                 <span
                   className={cn(
                     "flex h-8 w-14 items-center justify-center rounded-full transition-colors",
-                    active && "bg-primary/12",
+                    active && "bg-primary/[12%]",
                   )}
                 >
                   <tab.icon className="h-[22px] w-[22px]" />
@@ -116,7 +116,7 @@ export function BottomNav() {
             <span
               className={cn(
                 "flex h-8 w-14 items-center justify-center rounded-full transition-colors",
-                (menuActive || menuOpen) && "bg-primary/12",
+                (menuActive || menuOpen) && "bg-primary/[12%]",
               )}
             >
               <MenuIcon className="h-[22px] w-[22px]" />
@@ -195,7 +195,7 @@ export function BottomNav() {
               }}
               className="flex w-full items-center gap-3 rounded-xl px-3 py-3.5 text-left text-[15px] font-medium text-destructive transition-colors hover:bg-destructive/10 active:bg-destructive/10"
             >
-              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-destructive/12">
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-destructive/[12%]">
                 <LogOut className="h-5 w-5" />
               </span>
               Log out
