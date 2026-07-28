@@ -23,26 +23,56 @@ const client = new Client()
 const tables = new TablesDB(client);
 const users = new Users(client);
 
-const admins = await users.list({ queries: [Query.contains("labels", "admin")] });
-const author = admins.users.find((u) => u.status);
+/**
+ * Find someone to credit the report to.
+ *
+ * A role is an account label, so naming an *admin* specifically needs the Auth
+ * scope. That is more privilege than seeding warrants — the author is only
+ * attribution — so a Databases-only key falls back to the profiles table, which
+ * only ever contains provisioned users anyway.
+ */
+async function findAuthor() {
+  try {
+    const admins = await users.list({
+      queries: [Query.contains("labels", "admin")],
+    });
+    const admin = admins.users.find((u) => u.status);
+    if (admin) {
+      let name = admin.name;
+      try {
+        const profile = await tables.getRow({
+          databaseId: DATABASE_ID,
+          tableId: "profiles",
+          rowId: admin.$id,
+        });
+        name = profile.name || name;
+      } catch {
+        /* keep the account name */
+      }
+      return { id: admin.$id, name };
+    }
+  } catch (e) {
+    if (e.code !== 401) throw e;
+    console.log("(key has no Auth scope — taking the author from profiles)");
+  }
+
+  const rows = await tables.listRows({
+    databaseId: DATABASE_ID,
+    tableId: "profiles",
+    queries: [Query.limit(1)],
+  });
+  const profile = rows.rows[0];
+  return profile ? { id: profile.$id, name: profile.name } : null;
+}
+
+const author = await findAuthor();
 if (!author) {
   console.error(
-    "\nNo enabled administrator found. Run npm run appwrite:bootstrap first.\n",
+    "\nNo user found to credit. Run npm run appwrite:bootstrap first.\n",
   );
   process.exit(1);
 }
-
-let authorName = author.name;
-try {
-  const profile = await tables.getRow({
-    databaseId: DATABASE_ID,
-    tableId: "profiles",
-    rowId: author.$id,
-  });
-  authorName = profile.name || authorName;
-} catch {
-  /* fall back to the account name */
-}
+const authorName = author.name;
 
 const existing = await tables.listRows({
   databaseId: DATABASE_ID,
@@ -78,7 +108,7 @@ await tables.createRow({
     date: DATE,
     status: "final",
     data: JSON.stringify(data),
-    createdBy: author.$id,
+    createdBy: author.id,
     createdByName: authorName,
     updatedByName: authorName,
     // An API key may backdate a row; the app's own timestamps stay automatic.
