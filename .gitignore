@@ -12,3 +12,7 @@ dist-ssr
 
 # TS build cache
 *.tsbuildinfo
+
+# Appwrite CLI scratch / function build output
+appwrite/.appwrite
+appwrite/functions/*/node_modules

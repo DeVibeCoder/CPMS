@@ -21,6 +21,9 @@ import { useTheme, type ThemeMode } from "@/store/theme";
 import { cn, initials, roleLabel } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 
+/** Matches the minimum enforced when an admin creates a user. */
+const MIN_PASSWORD = 8;
+
 export default function ProfilePage() {
   const { user, refresh } = useAuth();
   const { mode, setMode } = useTheme();
@@ -32,7 +35,6 @@ export default function ProfilePage() {
   const [username, setUsername] = useState(
     user?.username || user?.email.split("@")[0] || "",
   );
-  const [email, setEmail] = useState(user?.email ?? "");
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>(
     user?.avatarUrl,
   );
@@ -63,39 +65,46 @@ export default function ProfilePage() {
   };
 
   const saveProfile = async () => {
-    if (!displayName.trim() || !fullName.trim() || !email.trim()) {
+    if (!displayName.trim() || !fullName.trim()) {
       toast({
         variant: "destructive",
-        title: "Display name, full name and email are required.",
+        title: "Display name and full name are required.",
       });
       return;
     }
     setSavingProfile(true);
     try {
+      // Email is intentionally absent — it is the sign-in identity and is
+      // owned by the auth service, not this form.
       await repo.updateUser(user.id, {
         name: fullName,
         displayName,
         username,
-        email,
         avatarUrl,
       });
       await refresh();
       toast({ variant: "success", title: "Profile updated" });
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "Could not update profile",
+        description: e instanceof Error ? e.message : undefined,
+      });
     } finally {
       setSavingProfile(false);
     }
   };
 
   const changePassword = async () => {
-    if (currentPw !== user.password) {
-      toast({ variant: "destructive", title: "Current password is incorrect." });
+    if (!currentPw) {
+      toast({ variant: "destructive", title: "Enter your current password." });
       return;
     }
-    if (newPw.length < 4) {
+    if (newPw.length < MIN_PASSWORD) {
       toast({
         variant: "destructive",
         title: "New password is too short.",
-        description: "Use at least 4 characters.",
+        description: `Use at least ${MIN_PASSWORD} characters.`,
       });
       return;
     }
@@ -105,12 +114,19 @@ export default function ProfilePage() {
     }
     setSavingPw(true);
     try {
-      await repo.updateUser(user.id, { password: newPw });
-      await refresh();
+      // The current password is verified by the backend, not here — the app
+      // never holds a copy of it.
+      await repo.changePassword(currentPw, newPw);
       setCurrentPw("");
       setNewPw("");
       setConfirmPw("");
       toast({ variant: "success", title: "Password changed" });
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "Could not change password",
+        description: e instanceof Error ? e.message : undefined,
+      });
     } finally {
       setSavingPw(false);
     }
@@ -240,11 +256,11 @@ export default function ProfilePage() {
                 </div>
                 <div className="space-y-1.5">
                   <Label>Email Address</Label>
-                  <Input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
+                  <Input type="email" value={user.email} disabled />
+                  <p className="text-xs text-muted-foreground">
+                    This is your sign-in address. Ask an administrator to
+                    change it.
+                  </p>
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">

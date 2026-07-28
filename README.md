@@ -24,6 +24,22 @@ npm run preview    # preview the production build
 npm run typecheck  # type-check only
 ```
 
+### Backend
+
+The app runs against **Appwrite** when `VITE_APPWRITE_ENDPOINT` and
+`VITE_APPWRITE_PROJECT_ID` are set, and falls back to an offline localStorage
+store when they are not — so `npm run dev` works with no backend at all.
+
+To connect a real backend, follow [`appwrite/README.md`](appwrite/README.md):
+
+```bash
+cp .env.example .env.local          # endpoint, project id, API key
+npm run appwrite:setup              # database, tables, permissions
+npm run appwrite:bootstrap -- admin@cementplant.com "a-good-password"
+```
+
+The browser console prints which data source is in use.
+
 ### Roles & seeded accounts
 
 | Role     | Email                      | Password       | Can do                                                        |
@@ -32,10 +48,13 @@ npm run typecheck  # type-check only
 | Dispatch | `dispatch@cementplant.com` | `dispatch123`  | View, create/edit reports, generate PDF & print. No users/settings/delete |
 | Viewer   | `viewer@cementplant.com`   | `viewer123`    | Read-only — view reports, dashboards & analytics             |
 
-Roles are enforced through the capability map in `src/store/auth.ts`; the UI
-hides actions a role can't perform and the routes are guarded as well. These
-seeded accounts exist for local/dev use only — create real users on the Users
-page and remove the seeds before going live.
+These seeded accounts exist **only** in the offline localStorage store. On
+Appwrite there are no default accounts: you create the first admin with
+`npm run appwrite:bootstrap`, and everyone else through Settings → Users.
+
+Roles are enforced twice — through the capability map in `src/store/auth.ts`,
+which decides what the UI shows, and through Appwrite's table permissions, which
+decide what is actually allowed.
 
 ---
 
@@ -62,16 +81,17 @@ page and remove the seeds before going live.
 
 ---
 
-## Architecture & migration path
+## Architecture
 
 The app talks to data **only** through the `Repository` interface
-(`src/data/repository.ts`). The current implementation is a JSON database
-persisted to `localStorage` (`src/data/localRepository.ts`) — every method is
-already `async`.
+(`src/data/repository.ts`) — every method is `async`. Two implementations exist:
 
-**To migrate to Supabase / SQL / a REST API:** implement `Repository` in a new
-file and change the single export in `src/data/index.ts`. No page or component
-imports a concrete repository, so nothing else changes.
+- `src/data/appwriteRepository.ts` — Appwrite Auth + TablesDB (production).
+- `src/data/localRepository.ts` — JSON document in localStorage (offline/demo).
+
+`src/data/index.ts` picks one at startup from the environment. No page or
+component imports a concrete repository, so swapping backends means writing one
+file and changing one export.
 
 ```
 src/
@@ -82,11 +102,12 @@ src/
     report/      report document + numeric field
     common/      logo, page header, theme toggle, confirm dialog
     auth/        route guards
-  data/          repository interface + localStorage impl + seed
-  lib/           calculations, analytics, pdf, utils
+  data/          repository interface + Appwrite & localStorage impls + seed
+  lib/           appwrite client, calculations, analytics, pdf, utils
   pages/         one file per route
   store/         zustand stores (auth, theme, settings)
   types/         domain model
+appwrite/        schema setup, bootstrap & seed scripts, admin-users function
 ```
 
 ### Report domain model
@@ -119,8 +140,12 @@ source — the row/column values match.
 
 ---
 
-## Production hardening checklist (when moving off the demo)
+## Production checklist
 
-- Replace the localStorage repository with a real backend (see migration path).
-- Replace mock auth with real auth (Supabase Auth / JWT); hash passwords.
-- Move role checks server-side (the client guards are UX, not security).
+- Set `VITE_APPWRITE_ENDPOINT` / `VITE_APPWRITE_PROJECT_ID` so the app uses
+  Appwrite rather than the localStorage demo store.
+- Deploy the `admin-users` function — without it, user management fails.
+- Register the deployed origin as a Web platform in the Appwrite console.
+- Restrict signup so accounts are only ever created through the app.
+
+All four are covered step by step in [`appwrite/README.md`](appwrite/README.md).

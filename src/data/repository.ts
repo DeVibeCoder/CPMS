@@ -1,25 +1,43 @@
 import type {
   CompanySettings,
   Database,
+  NewUser,
   Report,
   User,
+  UserPatch,
 } from "@/types";
 
 /**
  * Repository contract.
  *
- * The whole app talks to data *only* through this async interface. The current
- * implementation is a JSON store persisted to localStorage, but any backend
- * (Supabase, a REST API, Postgres, etc.) can be dropped in by implementing
- * `Repository` and swapping the export in `src/data/index.ts`. No page or
- * component needs to change — every method is already async.
+ * The whole app talks to data *only* through this async interface. Two
+ * implementations exist:
+ *
+ *  - `LocalRepository`    — JSON document in localStorage (offline / demo).
+ *  - `AppwriteRepository` — Appwrite Auth + TablesDB (production).
+ *
+ * `src/data/index.ts` picks one at startup based on the environment. No page
+ * or component imports a concrete implementation.
+ *
+ * The repository also owns the *session*: it is the thing that knows whether
+ * a user is signed in, so `login` / `getCurrentUser` / `logout` live here
+ * rather than in the auth store.
  */
 export interface Repository {
-  // ---- Auth / Users ----
-  login(email: string, password: string): Promise<User | null>;
+  // ---- Session ----
+  /** Sign in. Returns null when the credentials are wrong or the account is disabled. */
+  login(email: string, password: string, remember: boolean): Promise<User | null>;
+  /** Restore the signed-in user from a persisted session, if any. */
+  getCurrentUser(): Promise<User | null>;
+  /** Clear the persisted session. */
+  logout(): Promise<void>;
+  /** Change the signed-in user's own password. Throws if `current` is wrong. */
+  changePassword(current: string, next: string): Promise<void>;
+
+  // ---- Users ----
   listUsers(): Promise<User[]>;
-  createUser(input: Omit<User, "id" | "createdAt">): Promise<User>;
-  updateUser(id: string, patch: Partial<User>): Promise<User>;
+  createUser(input: NewUser): Promise<User>;
+  updateUser(id: string, patch: UserPatch): Promise<User>;
   deleteUser(id: string): Promise<void>;
 
   // ---- Reports ----

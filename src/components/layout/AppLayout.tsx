@@ -1,9 +1,11 @@
+import { useEffect } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import { SidebarNav } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { BottomNav } from "@/components/mobile/BottomNav";
 import { MobileHeader } from "@/components/mobile/MobileHeader";
+import { useSettings } from "@/store/settings";
 import { useSidebar } from "@/store/sidebar";
 import { useIsDesktop, useIsMobile } from "@/hooks/useMediaQuery";
 import { cn } from "@/lib/utils";
@@ -20,6 +22,14 @@ export function AppLayout() {
   const collapsedPref = useSidebar((s) => s.collapsed);
   const collapsed = isDesktop ? collapsedPref : true;
   const focused = isFocusedRoute(location.pathname);
+  const loadSettings = useSettings((s) => s.load);
+
+  // This layout only mounts behind RequireAuth, so it is the first point at
+  // which settings are actually readable after a fresh sign-in. Cached after
+  // the first call.
+  useEffect(() => {
+    void loadSettings();
+  }, [loadSettings]);
 
   // Native-style enter transition, re-keyed per navigation.
   const page = (

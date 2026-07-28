@@ -40,7 +40,11 @@ export default function App() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    Promise.all([restore(), loadSettings()]).finally(() => setReady(true));
+    // Settings are only readable once signed in (RLS), so restore the session
+    // first and only then fetch them. `load()` is a no-op if already cached.
+    restore()
+      .then(() => (useAuth.getState().user ? loadSettings() : null))
+      .finally(() => setReady(true));
   }, [restore, loadSettings]);
 
   if (!ready) return <BootScreen />;

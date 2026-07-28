@@ -1,13 +1,7 @@
 import { create } from "zustand";
 import type { Role, User } from "@/types";
 import { repo } from "@/data";
-
-const SESSION_KEY = "cpsr.session";
-
-interface StoredSession {
-  userId: string;
-  remember: boolean;
-}
+import { useSettings } from "./settings";
 
 interface AuthState {
   user: User | null;
@@ -73,16 +67,11 @@ export const useAuth = create<AuthState>((set, get) => ({
   login: async (email, password, remember) => {
     set({ loading: true, error: null });
     try {
-      const user = await repo.login(email, password);
+      const user = await repo.login(email, password, remember);
       if (!user) {
         set({ loading: false, error: "Invalid email or password." });
         return false;
       }
-      const session: StoredSession = { userId: user.id, remember };
-      const store = remember ? localStorage : sessionStorage;
-      store.setItem(SESSION_KEY, JSON.stringify(session));
-      // Clear the other store to avoid stale sessions.
-      (remember ? sessionStorage : localStorage).removeItem(SESSION_KEY);
       set({ user, loading: false, error: null });
       return true;
     } catch (e) {
@@ -95,31 +84,29 @@ export const useAuth = create<AuthState>((set, get) => ({
   },
 
   logout: () => {
-    localStorage.removeItem(SESSION_KEY);
-    sessionStorage.removeItem(SESSION_KEY);
+    // Fire-and-forget: the UI should never wait on a sign-out round trip.
+    void repo.logout();
+    useSettings.getState().clear();
     set({ user: null });
   },
 
+  // Rehydrate from whatever session the repository has persisted. Runs once at
+  // startup, before the router decides whether to show the login page.
   restore: async () => {
-    const raw =
-      localStorage.getItem(SESSION_KEY) ?? sessionStorage.getItem(SESSION_KEY);
-    if (!raw) return;
     try {
-      const session = JSON.parse(raw) as StoredSession;
-      const users = await repo.listUsers();
-      const user = users.find((u) => u.id === session.userId && u.active);
-      if (user) set({ user });
-      else get().logout();
+      set({ user: await repo.getCurrentUser() });
     } catch {
-      get().logout();
+      set({ user: null });
     }
   },
 
   refresh: async () => {
-    const current = get().user;
-    if (!current) return;
-    const users = await repo.listUsers();
-    const user = users.find((u) => u.id === current.id);
-    if (user) set({ user });
+    if (!get().user) return;
+    try {
+      const user = await repo.getCurrentUser();
+      if (user) set({ user });
+    } catch {
+      /* keep the current user rather than flickering the UI */
+    }
   },
 }));

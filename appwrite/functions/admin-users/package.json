@@ -1,0 +1,11 @@
+{
+  "name": "admin-users",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Privileged user management for CPSM",
+  "type": "module",
+  "main": "src/main.js",
+  "dependencies": {
+    "node-appwrite": "^27.1.0"
+  }
+}

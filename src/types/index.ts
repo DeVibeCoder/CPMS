@@ -22,8 +22,6 @@ export interface User {
   /** Login handle. Falls back to the email local-part. */
   username?: string;
   email: string;
-  /** NOTE: mock auth. Replace with Supabase Auth / hashed passwords on migration. */
-  password: string;
   role: Role;
   active: boolean;
   createdAt: string;
@@ -33,6 +31,17 @@ export interface User {
   /** Uploaded profile picture as a data URL. */
   avatarUrl?: string;
 }
+
+/**
+ * Payload for creating a user. The password is only ever an *input* — it is
+ * never read back out of the store, so it lives here rather than on `User`.
+ */
+export type NewUser = Omit<User, "id" | "createdAt"> & { password: string };
+
+/** Patch for updating a user. A non-empty `password` resets their password. */
+export type UserPatch = Partial<Omit<User, "id" | "createdAt">> & {
+  password?: string;
+};
 
 export type ReportStatus = "draft" | "final";
 

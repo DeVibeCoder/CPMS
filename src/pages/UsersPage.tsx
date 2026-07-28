@@ -44,6 +44,9 @@ function RoleIcon({ role, className }: { role: Role; className?: string }) {
   return <UserCog className={className} />;
 }
 
+/** Appwrite Auth's own floor is 8; the admin-users function enforces the same. */
+const MIN_PASSWORD = 8;
+
 const AVATAR_COLORS = [
   "#1d4ed8",
   "#0ea5e9",
@@ -109,7 +112,8 @@ export default function UsersPage() {
       id: u.id,
       name: u.name,
       email: u.email,
-      password: u.password,
+      // Passwords are never readable — blank means "leave it unchanged".
+      password: "",
       role: u.role,
       active: u.active,
     });
@@ -117,8 +121,20 @@ export default function UsersPage() {
   };
 
   const save = async () => {
-    if (!form.name.trim() || !form.email.trim() || !form.password.trim()) {
-      toast({ variant: "destructive", title: "All fields are required." });
+    if (!form.name.trim() || !form.email.trim()) {
+      toast({ variant: "destructive", title: "Name and email are required." });
+      return;
+    }
+    if (!form.id && !form.password.trim()) {
+      toast({ variant: "destructive", title: "A password is required." });
+      return;
+    }
+    if (form.password.trim() && form.password.length < MIN_PASSWORD) {
+      toast({
+        variant: "destructive",
+        title: "Password is too short.",
+        description: `Use at least ${MIN_PASSWORD} characters.`,
+      });
       return;
     }
     setSaving(true);
@@ -127,7 +143,8 @@ export default function UsersPage() {
         await repo.updateUser(form.id, {
           name: form.name,
           email: form.email,
-          password: form.password,
+          // Only send a password when one was actually typed.
+          ...(form.password.trim() ? { password: form.password } : {}),
           role: form.role,
           active: form.active,
         });
@@ -159,7 +176,15 @@ export default function UsersPage() {
   };
 
   const toggleActive = async (u: User) => {
-    await repo.updateUser(u.id, { active: !u.active });
+    try {
+      await repo.updateUser(u.id, { active: !u.active });
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "Could not update the account",
+        description: e instanceof Error ? e.message : undefined,
+      });
+    }
     await load();
   };
 
@@ -171,6 +196,12 @@ export default function UsersPage() {
       toast({ variant: "success", title: "User deleted" });
       setToDelete(null);
       await load();
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "Could not delete user",
+        description: e instanceof Error ? e.message : undefined,
+      });
     } finally {
       setDeleting(false);
     }
@@ -386,22 +417,43 @@ export default function UsersPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="u-email">Email</Label>
+              <Label htmlFor="u-email">
+                Email
+                {form.id && (
+                  <span className="ml-1 font-normal text-muted-foreground">
+                    — this is their sign-in address and cannot be changed
+                  </span>
+                )}
+              </Label>
               <Input
                 id="u-email"
                 type="email"
                 value={form.email}
+                disabled={Boolean(form.id)}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 placeholder="jane@cementplant.com"
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="u-pw">Password</Label>
+              <Label htmlFor="u-pw">
+                {form.id ? "New password" : "Password"}
+                {form.id && (
+                  <span className="ml-1 font-normal text-muted-foreground">
+                    — leave blank to keep the current one
+                  </span>
+                )}
+              </Label>
               <Input
                 id="u-pw"
+                type="password"
+                autoComplete="new-password"
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
-                placeholder="Set a password"
+                placeholder={
+                  form.id
+                    ? "Unchanged"
+                    : `At least ${MIN_PASSWORD} characters`
+                }
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
