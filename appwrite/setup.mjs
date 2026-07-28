@@ -102,10 +102,21 @@ const str = (tableId, key, size, required, extra = {}) =>
 console.log(`\nCPSM → ${endpoint} (project ${projectId})\n`);
 
 // -----------------------------------------------------------------------------
+// Look before creating. A project already at its plan's database limit answers
+// the create call with "maximum number of databases reached" rather than a 409,
+// so treating 409 as the only "already there" signal would fail every re-run on
+// the free plan.
+// -----------------------------------------------------------------------------
 console.log("Database");
-await ensure(DATABASE_ID, () =>
-  tables.create({ databaseId: DATABASE_ID, name: "CPSM" }),
-);
+try {
+  await tables.get({ databaseId: DATABASE_ID });
+  console.log(`  exists   ${DATABASE_ID}`);
+} catch (e) {
+  if (e.code !== 404) throw new Error(`${DATABASE_ID}: ${e.message}`);
+  await ensure(DATABASE_ID, () =>
+    tables.create({ databaseId: DATABASE_ID, name: "CPSM" }),
+  );
+}
 
 // -----------------------------------------------------------------------------
 // profiles — the editable part of a user record.
