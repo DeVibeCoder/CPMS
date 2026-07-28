@@ -11,9 +11,15 @@ component layer. Dark-blue industrial theme with full light/dark mode.
 
 ## Quick start
 
+CPSM requires an Appwrite backend — there is no offline mode and no demo data.
+Set one up once by following [`appwrite/README.md`](appwrite/README.md):
+
 ```bash
 npm install
-npm run dev        # http://localhost:5173
+cp .env.example .env.local          # endpoint, project id, API key
+npm run appwrite:setup              # database, tables, permissions
+npm run appwrite:bootstrap -- you@example.com "a-good-password" "Your Name"
+npm run dev                         # http://localhost:5173
 ```
 
 Other scripts:
@@ -22,39 +28,28 @@ Other scripts:
 npm run build      # type-check + production build to /dist
 npm run preview    # preview the production build
 npm run typecheck  # type-check only
+npm run appwrite:seed   # optional 12/07/2026 reference report
 ```
 
-### Backend
+Without `VITE_APPWRITE_ENDPOINT` and `VITE_APPWRITE_PROJECT_ID` the app shows a
+"Backend not configured" screen rather than starting. Vite inlines those at
+build time, so changing them needs a rebuild, not just a restart.
 
-The app runs against **Appwrite** when `VITE_APPWRITE_ENDPOINT` and
-`VITE_APPWRITE_PROJECT_ID` are set, and falls back to an offline localStorage
-store when they are not — so `npm run dev` works with no backend at all.
+### Roles
 
-To connect a real backend, follow [`appwrite/README.md`](appwrite/README.md):
+| Role     | Can do                                                                   |
+| -------- | ------------------------------------------------------------------------ |
+| Admin    | Everything: create/edit/delete reports, users, settings, backup          |
+| Dispatch | View, create/edit reports, generate PDF & print. No users/settings/delete |
+| Viewer   | Read-only — view reports, dashboards & analytics                         |
 
-```bash
-cp .env.example .env.local          # endpoint, project id, API key
-npm run appwrite:setup              # database, tables, permissions
-npm run appwrite:bootstrap -- admin@cementplant.com "a-good-password"
-```
-
-The browser console prints which data source is in use.
-
-### Roles & seeded accounts
-
-| Role     | Email                      | Password       | Can do                                                        |
-| -------- | -------------------------- | -------------- | ------------------------------------------------------------ |
-| Admin    | `admin@cementplant.com`    | `admin123`     | Everything: create/edit/delete reports, users, settings, backup |
-| Dispatch | `dispatch@cementplant.com` | `dispatch123`  | View, create/edit reports, generate PDF & print. No users/settings/delete |
-| Viewer   | `viewer@cementplant.com`   | `viewer123`    | Read-only — view reports, dashboards & analytics             |
-
-These seeded accounts exist **only** in the offline localStorage store. On
-Appwrite there are no default accounts: you create the first admin with
-`npm run appwrite:bootstrap`, and everyone else through Settings → Users.
+There are no default accounts. The first admin is created by
+`npm run appwrite:bootstrap`; everyone else is created through Settings → Users.
 
 Roles are enforced twice — through the capability map in `src/store/auth.ts`,
 which decides what the UI shows, and through Appwrite's table permissions, which
-decide what is actually allowed.
+decide what is actually allowed. A role is an Appwrite account *label*, so it
+cannot be changed from the browser.
 
 ---
 
@@ -84,14 +79,12 @@ decide what is actually allowed.
 ## Architecture
 
 The app talks to data **only** through the `Repository` interface
-(`src/data/repository.ts`) — every method is `async`. Two implementations exist:
+(`src/data/repository.ts`) — every method is `async`.
 
-- `src/data/appwriteRepository.ts` — Appwrite Auth + TablesDB (production).
-- `src/data/localRepository.ts` — JSON document in localStorage (offline/demo).
-
-`src/data/index.ts` picks one at startup from the environment. No page or
-component imports a concrete repository, so swapping backends means writing one
-file and changing one export.
+`src/data/appwriteRepository.ts` implements it against Appwrite Auth + TablesDB
+and is the only implementation — no page or component imports it directly, so
+swapping backends means writing one class and changing one export in
+`src/data/index.ts`.
 
 ```
 src/
@@ -102,7 +95,7 @@ src/
     report/      report document + numeric field
     common/      logo, page header, theme toggle, confirm dialog
     auth/        route guards
-  data/          repository interface + Appwrite & localStorage impls + seed
+  data/          repository interface + Appwrite implementation
   lib/           appwrite client, calculations, analytics, pdf, utils
   pages/         one file per route
   store/         zustand stores (auth, theme, settings)
@@ -134,16 +127,16 @@ reproduce the plant's **master report layout 1:1**:
 
 All palette and geometry constants are centralised at the top of
 `src/lib/pdf.ts` (`NAVY`, `SLATE`, `BLUE`, `CREAM`, `MARGIN`, `GAP`, column
-width factors). The exact figures from the sample report (12/07/2026) are seeded
-as a real report so you can open it and compare the output side by side with the
-source — the row/column values match.
+width factors). `npm run appwrite:seed` inserts the sample report (12/07/2026)
+with the exact source figures, so you can open it and compare the output side by
+side with the original — the row/column values match.
 
 ---
 
 ## Production checklist
 
-- Set `VITE_APPWRITE_ENDPOINT` / `VITE_APPWRITE_PROJECT_ID` so the app uses
-  Appwrite rather than the localStorage demo store.
+- Set `VITE_APPWRITE_ENDPOINT` / `VITE_APPWRITE_PROJECT_ID` in your host's
+  environment, before the build — Vite inlines them at build time.
 - Deploy the `admin-users` function — without it, user management fails.
 - Register the deployed origin as a Web platform in the Appwrite console.
 - Restrict signup so accounts are only ever created through the app.

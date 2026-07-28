@@ -10,14 +10,12 @@ import type {
 /**
  * Repository contract.
  *
- * The whole app talks to data *only* through this async interface. Two
- * implementations exist:
+ * The whole app talks to data *only* through this async interface, which
+ * `AppwriteRepository` implements against Appwrite Auth + TablesDB. No page or
+ * component imports the implementation; they all go through `src/data`.
  *
- *  - `LocalRepository`    — JSON document in localStorage (offline / demo).
- *  - `AppwriteRepository` — Appwrite Auth + TablesDB (production).
- *
- * `src/data/index.ts` picks one at startup based on the environment. No page
- * or component imports a concrete implementation.
+ * The interface stays deliberately backend-agnostic — swapping stores means
+ * writing one class and changing one export in `src/data/index.ts`.
  *
  * The repository also owns the *session*: it is the thing that knows whether
  * a user is signed in, so `login` / `getCurrentUser` / `logout` live here

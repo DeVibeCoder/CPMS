@@ -275,8 +275,8 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Export the full database as JSON, restore from a backup, or reset
-              to seed data.
+              Export reports, settings and the user list as JSON, restore
+              reports and settings from a backup, or clear all report data.
             </p>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={onExport}>
@@ -302,7 +302,7 @@ export default function SettingsPage() {
                 className="text-destructive"
                 onClick={() => setResetOpen(true)}
               >
-                <RotateCcw className="h-4 w-4" /> Reset to Seed
+                <RotateCcw className="h-4 w-4" /> Reset Data
               </Button>
             </div>
           </CardContent>
@@ -313,9 +313,9 @@ export default function SettingsPage() {
         open={resetOpen}
         onOpenChange={setResetOpen}
         title="Reset database?"
-        description="This will erase all current reports, users and settings and restore the demo seed data. This cannot be undone."
+        description="This permanently deletes every report and restores the default settings. User accounts are not affected. This cannot be undone."
         destructive
-        confirmLabel="Reset Everything"
+        confirmLabel="Delete All Reports"
         loading={resetting}
         onConfirm={onReset}
       />

@@ -11,6 +11,7 @@ import {
 import { useAuth } from "@/store/auth";
 import { useSettings } from "@/store/settings";
 import { Logo } from "@/components/common/Logo";
+import { BACKEND_NOT_CONFIGURED, isBackendConfigured } from "@/data";
 
 import LoginPage from "@/pages/LoginPage";
 import DashboardPage from "@/pages/DashboardPage";
@@ -34,19 +35,42 @@ function BootScreen() {
   );
 }
 
+/**
+ * Shown when the build carries no Appwrite configuration. Vite inlines env
+ * vars at build time, so a missing variable cannot be fixed at run time — it
+ * needs new values and a rebuild. Saying so plainly beats an empty dashboard
+ * that looks like a database with no data in it.
+ */
+function NotConfiguredScreen() {
+  return (
+    <div className="flex h-screen items-center justify-center bg-background p-6">
+      <div className="max-w-md space-y-4 text-center">
+        <Logo size={56} className="mx-auto" />
+        <h1 className="text-lg font-semibold">Backend not configured</h1>
+        <p className="text-sm text-muted-foreground">{BACKEND_NOT_CONFIGURED}</p>
+        <p className="text-xs text-muted-foreground">
+          See <code>appwrite/README.md</code> for the full setup.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const restore = useAuth((s) => s.restore);
   const loadSettings = useSettings((s) => s.load);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    // Settings are only readable once signed in (RLS), so restore the session
-    // first and only then fetch them. `load()` is a no-op if already cached.
+    if (!isBackendConfigured) return;
+    // Settings are only readable once signed in, so restore the session first
+    // and only then fetch them. `load()` is a no-op if already cached.
     restore()
       .then(() => (useAuth.getState().user ? loadSettings() : null))
       .finally(() => setReady(true));
   }, [restore, loadSettings]);
 
+  if (!isBackendConfigured) return <NotConfiguredScreen />;
   if (!ready) return <BootScreen />;
 
   return (

@@ -1,8 +1,8 @@
 # Appwrite setup
 
-The app runs against Appwrite whenever `VITE_APPWRITE_ENDPOINT` and
-`VITE_APPWRITE_PROJECT_ID` are set. Without them it silently falls back to the
-offline localStorage store, so you can always develop without a backend.
+CPSM requires Appwrite — there is no offline store and no demo data. Without
+`VITE_APPWRITE_ENDPOINT` and `VITE_APPWRITE_PROJECT_ID` the app renders a
+"Backend not configured" screen instead of starting.
 
 Targets Appwrite **1.9 / Cloud** (the `TablesDB` API). Work through the steps
 below once.
