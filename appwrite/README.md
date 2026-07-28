@@ -61,6 +61,10 @@ directly with the project id.
 Disabling a user disables their Appwrite account, so they cannot hold a session
 at all — access is cut off immediately, not just at their next login.
 
+Re-running `npm run appwrite:setup` reconciles table permissions on an existing
+project, so tightening a rule here reaches projects that already exist rather
+than only new ones.
+
 ## 4. Create your administrator
 
 Nothing in the app can create the first account, so create it here:
@@ -114,16 +118,20 @@ no secret is stored on the function. If you would rather use a static key, add
 > Add / Delete / role & status changes** will fail, with a message telling you
 > the function is missing.
 
-## 6. Turn off public signup
+## 6. Restrict public signup
 
-**Auth → Settings → Email/Password** is the only method the app uses. Under
-**Auth → Security**, set **Users limit** to your headcount, or disable the
-sign-up route entirely if your version offers it.
+Appwrite projects allow anyone to register by default. **Auth → Security →
+Users limit**, set to your headcount, is the usual way to close it; email/password
+must stay enabled or nobody can sign in at all.
 
-Accounts should only ever be created by an admin through the app. Even if a
-stray account is created another way it gets no role label and no profile row,
-so the app refuses to sign it in — but closing the door properly is still worth
-a minute.
+This is defence in depth rather than the primary control. A self-registered
+account gets no role label and no profile row, so the app refuses to sign it in,
+and — because every table grants read to `label:*` rather than to `Role.users()`
+— it can read nothing through the API either.
+
+That second point matters. Granting read to "any signed-in user" is the obvious
+thing to write and it is wrong here: with open signup, a stranger who registers
+*is* a signed-in user. Always spend permissions on a label, never on a session.
 
 ## 7. Configure Vercel
 

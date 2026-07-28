@@ -36,6 +36,36 @@ async function ensure(label, fn) {
 }
 
 /**
+ * Create a table, or bring an existing one back in line with this file.
+ *
+ * Permissions are reconciled on every run, not just at creation. A schema that
+ * only applies on first run is a schema that silently drifts: tightening a rule
+ * here would otherwise never reach a project that already exists.
+ */
+async function ensureTable(tableId, name, rowSecurity, permissions) {
+  try {
+    await tables.createTable({
+      databaseId: DATABASE_ID,
+      tableId,
+      name,
+      rowSecurity,
+      permissions,
+    });
+    console.log(`  created  ${tableId}`);
+  } catch (e) {
+    if (e.code !== 409) throw new Error(`${tableId}: ${e.message}`);
+    await tables.updateTable({
+      databaseId: DATABASE_ID,
+      tableId,
+      name,
+      rowSecurity,
+      permissions,
+    });
+    console.log(`  exists   ${tableId} (permissions reconciled)`);
+  }
+}
+
+/**
  * Columns are created asynchronously; an index over a column that is still
  * "processing" fails. Wait for the whole table to settle before indexing.
  */
@@ -89,18 +119,10 @@ await ensure(DATABASE_ID, () =>
 // a user with write access to their own row still cannot promote themselves.
 // -----------------------------------------------------------------------------
 console.log("\nTable: profiles");
-await ensure("profiles", () =>
-  tables.createTable({
-    databaseId: DATABASE_ID,
-    tableId: "profiles",
-    name: "Profiles",
-    rowSecurity: true,
-    permissions: [
-      Permission.read(Role.label("admin")),
-      Permission.update(Role.label("admin")),
-    ],
-  }),
-);
+await ensureTable("profiles", "Profiles", true, [
+  Permission.read(Role.label("admin")),
+  Permission.update(Role.label("admin")),
+]);
 await str("profiles", "name", 128, true);
 await str("profiles", "displayName", 128, false);
 await str("profiles", "username", 64, false);
@@ -120,26 +142,24 @@ await ensure("profiles.lastLogin", () =>
 // reports — one row per report date.
 //
 // viewer  reads; dispatch also creates and updates; only admin deletes.
-// A disabled account cannot hold a session at all, so `users` here means
-// "signed in and enabled".
+//
+// Read is granted to the three role labels, never to `Role.users()`. Appwrite
+// projects allow public sign-up by default, and a self-registered account is
+// still a "user" — it would have inherited read access to every report while
+// being unable to sign into the app at all. Requiring a label means an account
+// nobody deliberately provisioned can read nothing.
 // -----------------------------------------------------------------------------
 console.log("\nTable: reports");
-await ensure("reports", () =>
-  tables.createTable({
-    databaseId: DATABASE_ID,
-    tableId: "reports",
-    name: "Reports",
-    rowSecurity: false,
-    permissions: [
-      Permission.read(Role.users()),
-      Permission.create(Role.label("admin")),
-      Permission.create(Role.label("dispatch")),
-      Permission.update(Role.label("admin")),
-      Permission.update(Role.label("dispatch")),
-      Permission.delete(Role.label("admin")),
-    ],
-  }),
-);
+await ensureTable("reports", "Reports", false, [
+  Permission.read(Role.label("admin")),
+  Permission.read(Role.label("dispatch")),
+  Permission.read(Role.label("viewer")),
+  Permission.create(Role.label("admin")),
+  Permission.create(Role.label("dispatch")),
+  Permission.update(Role.label("admin")),
+  Permission.update(Role.label("dispatch")),
+  Permission.delete(Role.label("admin")),
+]);
 await str("reports", "date", 10, true);
 await ensure("reports.status", () =>
   tables.createEnumColumn({
@@ -159,18 +179,13 @@ await str("reports", "updatedByName", 128, false);
 
 // -----------------------------------------------------------------------------
 console.log("\nTable: settings");
-await ensure("settings", () =>
-  tables.createTable({
-    databaseId: DATABASE_ID,
-    tableId: "settings",
-    name: "Settings",
-    rowSecurity: false,
-    permissions: [
-      Permission.read(Role.users()),
-      Permission.update(Role.label("admin")),
-    ],
-  }),
-);
+await ensureTable("settings", "Settings", false, [
+  // Same reasoning as reports: a label, not merely a session.
+  Permission.read(Role.label("admin")),
+  Permission.read(Role.label("dispatch")),
+  Permission.read(Role.label("viewer")),
+  Permission.update(Role.label("admin")),
+]);
 await str("settings", "companyName", 128, true);
 await str("settings", "reportTitle", 128, true);
 await str("settings", "pdfHeader", 256, true);
