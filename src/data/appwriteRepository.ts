@@ -12,11 +12,13 @@ import {
 import type {
   CompanySettings,
   Database,
+  NewShipment,
   NewUser,
   Report,
   ReportData,
   ReportStatus,
   Role,
+  Shipment,
   User,
   UserPatch,
 } from "@/types";
@@ -29,6 +31,7 @@ import {
   TABLE_PROFILES,
   TABLE_REPORTS,
   TABLE_SETTINGS,
+  TABLE_SHIPMENTS,
   clearRememberSession,
   sessionOutlivedItsTab,
   setRememberSession,
@@ -61,6 +64,14 @@ interface ReportRow extends Models.Row {
   createdBy: string | null;
   createdByName: string;
   updatedByName: string | null;
+}
+
+interface ShipmentRow extends Models.Row {
+  date: string;
+  amountMt: number;
+  note: string | null;
+  createdBy: string | null;
+  createdByName: string;
 }
 
 /**
@@ -138,6 +149,19 @@ function toReport(row: ReportRow): Report {
     createdAt: row.$createdAt,
     updatedAt: row.$updatedAt,
     updatedByName: row.updatedByName ?? undefined,
+  };
+}
+
+function toShipment(row: ShipmentRow): Shipment {
+  return {
+    id: row.$id,
+    date: row.date,
+    amountMt: Number(row.amountMt) || 0,
+    note: row.note ?? undefined,
+    createdBy: row.createdBy ?? "",
+    createdByName: row.createdByName,
+    createdAt: row.$createdAt,
+    updatedAt: row.$updatedAt,
   };
 }
 
@@ -583,6 +607,74 @@ export class AppwriteRepository implements Repository {
     });
   }
 
+  // ---- Shipments ----
+  /**
+   * A 404 here means the shipments table itself is missing, i.e. the database
+   * predates this feature. Say which command fixes it rather than surfacing
+   * Appwrite's wording — it is a setup step, not a user error.
+   */
+  private shipmentsFail(message: string, e: unknown): never {
+    if (e instanceof AppwriteException && e.code === 404) {
+      throw new Error(
+        'The database has no "shipments" table yet. Run "npm run appwrite:setup" and try again.',
+      );
+    }
+    return fail(message, e);
+  }
+
+  async listShipments(): Promise<Shipment[]> {
+    try {
+      const rows = await this.listAllRows(TABLE_SHIPMENTS, [
+        Query.orderDesc("date"),
+      ]);
+      return rows.map((r) => toShipment(r as unknown as ShipmentRow));
+    } catch (e) {
+      return this.shipmentsFail("Could not load shipments.", e);
+    }
+  }
+
+  async saveShipment(input: NewShipment): Promise<Shipment> {
+    const data = {
+      date: input.date,
+      amountMt: input.amountMt,
+      note: input.note || null,
+      createdBy: input.createdBy || null,
+      createdByName: input.createdByName,
+    };
+    try {
+      // Look the date up first rather than relying on the unique index to
+      // reject a duplicate: the caller's intent is "this is what arrived that
+      // day", so a second entry corrects the first instead of failing.
+      const page = await this.tables.listRows({
+        databaseId: DATABASE_ID,
+        tableId: TABLE_SHIPMENTS,
+        queries: [Query.equal("date", input.date), Query.limit(1)],
+      });
+      const existing = page.rows[0];
+      const row = (await this.tables.upsertRow({
+        databaseId: DATABASE_ID,
+        tableId: TABLE_SHIPMENTS,
+        rowId: existing ? existing.$id : ID.unique(),
+        data,
+      })) as unknown as ShipmentRow;
+      return toShipment(row);
+    } catch (e) {
+      return this.shipmentsFail("Could not save the shipment.", e);
+    }
+  }
+
+  async deleteShipment(id: string): Promise<void> {
+    try {
+      await this.tables.deleteRow({
+        databaseId: DATABASE_ID,
+        tableId: TABLE_SHIPMENTS,
+        rowId: id,
+      });
+    } catch (e) {
+      this.shipmentsFail("Could not delete the shipment.", e);
+    }
+  }
+
   // ---- Settings ----
   async getSettings(): Promise<CompanySettings> {
     try {
@@ -621,12 +713,15 @@ export class AppwriteRepository implements Repository {
 
   // ---- Backup / Restore ----
   async exportDatabase(): Promise<Database> {
-    const [users, reports, settings] = await Promise.all([
+    const [users, reports, shipments, settings] = await Promise.all([
       this.listUsers(),
       this.listReports(),
+      // A database that predates the shipments table must still be backup-able,
+      // so a missing table yields an empty ledger rather than failing the export.
+      this.listShipments().catch(() => [] as Shipment[]),
       this.getSettings(),
     ]);
-    return { version: 2, users, reports, settings };
+    return { version: 3, users, reports, shipments, settings };
   }
 
   /**
@@ -639,6 +734,7 @@ export class AppwriteRepository implements Repository {
    */
   async importDatabase(db: Database): Promise<void> {
     if (db.settings) await this.updateSettings(db.settings);
+    await this.importShipments(db.shipments);
     if (!Array.isArray(db.reports) || db.reports.length === 0) return;
 
     const existing = new Map(
@@ -672,7 +768,40 @@ export class AppwriteRepository implements Repository {
     }
   }
 
-  /** Deletes every report and restores default settings. Admin only. */
+  /** Restore the shipments ledger from a backup, matching on date. */
+  private async importShipments(shipments?: Shipment[]): Promise<void> {
+    if (!Array.isArray(shipments) || shipments.length === 0) return;
+
+    const existing = new Map(
+      (await this.listAllRows(TABLE_SHIPMENTS)).map((r) => [
+        (r as unknown as ShipmentRow).date,
+        r.$id,
+      ]),
+    );
+
+    for (const shipment of shipments) {
+      try {
+        await this.tables.upsertRow({
+          databaseId: DATABASE_ID,
+          tableId: TABLE_SHIPMENTS,
+          rowId: existing.get(shipment.date) ?? ID.unique(),
+          data: {
+            date: shipment.date,
+            amountMt: shipment.amountMt,
+            note: shipment.note ?? null,
+            // Author ids from a backup belong to a different identity store, so
+            // only the recorded name is carried over.
+            createdBy: null,
+            createdByName: shipment.createdByName,
+          },
+        });
+      } catch (e) {
+        this.shipmentsFail("Could not restore the shipments.", e);
+      }
+    }
+  }
+
+  /** Deletes every report and shipment and restores default settings. Admin only. */
   async resetDatabase(): Promise<void> {
     try {
       const rows = await this.listAllRows(TABLE_REPORTS);
@@ -685,6 +814,22 @@ export class AppwriteRepository implements Repository {
       }
     } catch (e) {
       fail("Could not clear reports.", e);
+    }
+    // Best effort: a database that predates the shipments table has nothing to
+    // clear here, and that should not fail the reset.
+    try {
+      const rows = await this.listAllRows(TABLE_SHIPMENTS);
+      for (const row of rows) {
+        await this.tables.deleteRow({
+          databaseId: DATABASE_ID,
+          tableId: TABLE_SHIPMENTS,
+          rowId: row.$id,
+        });
+      }
+    } catch (e) {
+      if (!(e instanceof AppwriteException && e.code === 404)) {
+        fail("Could not clear shipments.", e);
+      }
     }
     await this.updateSettings({ ...DEFAULT_SETTINGS });
   }

@@ -41,17 +41,30 @@ npm run appwrite:setup
 
 This is idempotent — re-run it any time. It creates:
 
-| Table      | Holds                                                   |
-| ---------- | ------------------------------------------------------- |
-| `profiles` | name, username, avatar — one row per account            |
-| `reports`  | one row per report date; `data` is the report as JSON   |
-| `settings` | the single settings row, under the fixed id `app`       |
+| Table       | Holds                                                  |
+| ----------- | ------------------------------------------------------ |
+| `profiles`  | name, username, avatar — one row per account           |
+| `reports`   | one row per report date; `data` is the report as JSON  |
+| `shipments` | cement received into the silos — one row per date      |
+| `settings`  | the single settings row, under the fixed id `app`      |
 
 …plus the permissions that actually enforce roles:
 
-- **viewer** — may read reports and settings, nothing else.
-- **dispatch** — may also create and update reports.
-- **admin** — may additionally delete reports, edit settings, and manage users.
+- **viewer** — may read reports, shipments and settings, nothing else.
+- **dispatch** — may also create and update reports and shipments.
+- **admin** — may additionally delete reports and shipments, edit settings, and
+  manage users.
+
+Both `reports.date` and `shipments.date` carry a unique index, so one report and
+one shipment per day is a guarantee rather than a convention the UI happens to
+follow. Logging a second shipment for a date replaces the first — the intent is
+"this is what arrived that day", so a correction should not double the stock.
+
+**Adding `shipments` to an existing project.** Re-run `npm run appwrite:setup`;
+it creates the table and leaves everything else alone. Until you do, the
+Inventory page still renders — it falls back to the `Silo New Shipment MT`
+figure on each finalised report — but logging a shipment reports that the table
+is missing.
 
 A role is an Appwrite **account label**, so the table permissions read
 `label:admin` / `label:dispatch`. Only a server API key can change a label,
@@ -155,14 +168,14 @@ only. That split is deliberate — it means a user with write access to their ow
 row still cannot promote themselves, so no trigger or column-level rule is
 needed to stop them.
 
-**Backups.** Settings → Backup exports reports, settings and the user list as
-JSON. Restoring brings back reports (matched on date) and settings. It does
-**not** recreate users: accounts live in Appwrite Auth and the backup contains
-no credentials, so restoring them would produce profiles nobody could sign in
-to. Recreate users through Settings → Users.
+**Backups.** Settings → Backup exports reports, shipments, settings and the user
+list as JSON. Restoring brings back reports and shipments (both matched on date)
+and settings. It does **not** recreate users: accounts live in Appwrite Auth and
+the backup contains no credentials, so restoring them would produce profiles
+nobody could sign in to. Recreate users through Settings → Users.
 
-**"Reset database"** deletes every report and restores default settings. It does
-not touch accounts.
+**"Reset database"** deletes every report and shipment and restores default
+settings. It does not touch accounts.
 
 **"Remember me"** is emulated. Appwrite sessions are long-lived and there is no
 per-session "expire when the browser closes" option, so when the box is unticked

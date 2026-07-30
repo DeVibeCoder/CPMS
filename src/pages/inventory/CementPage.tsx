@@ -1,17 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { format, parseISO } from "date-fns";
 import {
-  ArrowDownToLine,
   ArrowUpFromLine,
   CalendarClock,
   Container,
   FileText,
   Loader2,
-  Pencil,
+  Plus,
   Ship,
+  Trash2,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,6 +26,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -33,6 +40,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { NumberField } from "@/components/report/NumberField";
 import { repo } from "@/data";
 import { usePageMeta } from "@/store/pageMeta";
@@ -41,18 +49,22 @@ import { useAuth, can } from "@/store/auth";
 import { buildBinCard, summariseBinCard } from "@/lib/binCard";
 import { formatNumber } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
-import type { Report } from "@/types";
+import type { Report, Shipment } from "@/types";
 
 /**
  * Cement inventory — a bin card.
  *
- * Nothing on this page is typed in except the very first opening balance. Each
- * row is derived from a finalised report:
+ * Two things feed it, and neither is typed into this page twice:
  *
  *     Current Balance = Opening Balance + New Shipment − Production
  *
- * and each day's closing figure becomes the next day's opening figure. Finalise
- * a report and its row appears here on its own.
+ * Production comes from finalised reports. New Shipment comes from the
+ * shipments ledger, logged here as it arrives. Each day's closing figure becomes
+ * the next day's opening figure.
+ *
+ * The one manual figure — the very first opening balance — is set in Settings,
+ * not here. It is entered once at go-live by an administrator, so it does not
+ * earn a permanent banner above the data everyone actually comes to read.
  */
 
 /** One summary tile. */
@@ -103,30 +115,57 @@ function Tile({
   );
 }
 
+const ALL_MONTHS = "all";
+
 export default function CementPage() {
   const navigate = useNavigate();
-  const role = useAuth((s) => s.user?.role);
-  const isAdmin = can(role, "settings");
+  const user = useAuth((s) => s.user);
+  // Logging what arrived is part of running the plant, so dispatch may do it.
+  // Removing a record rewrites settled history, so that stays with admin.
+  const canLog = can(user?.role, "editReports");
+  const canRemove = can(user?.role, "deleteReports");
   const settings = useSettings((s) => s.settings);
-  const saveSettings = useSettings((s) => s.save);
 
   const [reports, setReports] = useState<Report[] | null>(null);
-  const [anchorOpen, setAnchorOpen] = useState(false);
-  const [anchorBalance, setAnchorBalance] = useState(0);
-  const [anchorDate, setAnchorDate] = useState("");
+  const [shipments, setShipments] = useState<Shipment[]>([]);
+
+  /** null until the user picks — resolved to the newest month at render. */
+  const [month, setMonth] = useState<string | null>(null);
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [shipDate, setShipDate] = useState("");
+  const [shipAmount, setShipAmount] = useState(0);
+  const [shipNote, setShipNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const [toRemove, setToRemove] = useState<Shipment | null>(null);
+  const [removing, setRemoving] = useState(false);
 
   usePageMeta(
     "Cement Inventory",
     "Running stock ledger — balances are carried forward automatically from finalised reports.",
   );
 
-  useEffect(() => {
-    repo
-      .listReports()
-      .then(setReports)
-      .catch(() => setReports([]));
+  const load = useCallback(async () => {
+    const [loadedReports, loadedShipments] = await Promise.all([
+      repo.listReports().catch(() => [] as Report[]),
+      // A database that predates the shipments table should still show its
+      // ledger from the report figures rather than failing to render at all.
+      repo.listShipments().catch((e: unknown) => {
+        toast({
+          variant: "destructive",
+          title: "Shipments could not be loaded",
+          description: e instanceof Error ? e.message : undefined,
+        });
+        return [] as Shipment[];
+      }),
+    ]);
+    setReports(loadedReports);
+    setShipments(loadedShipments);
   }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const openingBalance = settings?.cementOpeningBalance ?? 0;
   const openingDate =
@@ -136,15 +175,34 @@ export default function CementPage() {
   const rows = useMemo(
     () =>
       reports
-        ? buildBinCard({ reports, openingBalance, openingDate })
+        ? buildBinCard({ reports, shipments, openingBalance, openingDate })
         : [],
-    [reports, openingBalance, openingDate],
+    [reports, shipments, openingBalance, openingDate],
   );
 
+  // The summary is deliberately whole-ledger, not month-filtered: "Current
+  // Balance" means the cement in the silos, which does not change because
+  // somebody is looking at March.
   const summary = useMemo(
     () => summariseBinCard(rows, openingBalance, openingDate),
     [rows, openingBalance, openingDate],
   );
+
+  /** Months that actually have rows, newest first. */
+  const months = useMemo(() => {
+    const set = new Set(rows.map((r) => r.date.slice(0, 7)));
+    return Array.from(set).sort((a, b) => b.localeCompare(a));
+  }, [rows]);
+
+  /**
+   * Default to the newest month rather than to everything: the ledger grows by a
+   * row a day, and the figure anyone opening this page wants is the current one.
+   * A month the user picked that has since emptied falls back the same way.
+   */
+  const activeMonth =
+    month && (month === ALL_MONTHS || months.includes(month))
+      ? month
+      : (months[0] ?? ALL_MONTHS);
 
   /**
    * Newest date first, to match Report History.
@@ -154,9 +212,15 @@ export default function CementPage() {
    * closing balance — so the calculation and the presentation deliberately run
    * in opposite directions.
    */
-  const displayRows = useMemo(() => [...rows].reverse(), [rows]);
+  const displayRows = useMemo(() => {
+    const visible =
+      activeMonth === ALL_MONTHS
+        ? rows
+        : rows.filter((r) => r.date.startsWith(activeMonth));
+    return [...visible].reverse();
+  }, [rows, activeMonth]);
 
-  /** Reports that are still drafts — their figures are not on the card yet. */
+  /** Reports that are still drafts — their production is not on the card yet. */
   const pendingDrafts = useMemo(
     () =>
       (reports ?? []).filter(
@@ -165,33 +229,58 @@ export default function CementPage() {
     [reports, openingDate],
   );
 
-  const openAnchor = () => {
-    setAnchorBalance(openingBalance);
-    setAnchorDate(settings?.cementOpeningDate ?? format(new Date(), "yyyy-MM-01"));
-    setAnchorOpen(true);
+  /** The shipment already recorded for the date being edited, if any. */
+  const existingShipment = useMemo(
+    () => shipments.find((s) => s.date === shipDate) ?? null,
+    [shipments, shipDate],
+  );
+
+  const openShipmentDialog = (date?: string) => {
+    const target = date ?? format(new Date(), "yyyy-MM-dd");
+    const existing = shipments.find((s) => s.date === target);
+    setShipDate(target);
+    setShipAmount(existing?.amountMt ?? 0);
+    setShipNote(existing?.note ?? "");
+    setDialogOpen(true);
   };
 
-  const saveAnchor = async () => {
-    if (!anchorDate) {
-      toast({ variant: "destructive", title: "Choose a start date." });
+  const saveShipment = async () => {
+    if (!user) return;
+    if (!shipDate) {
+      toast({ variant: "destructive", title: "Choose a date." });
+      return;
+    }
+    if (shipAmount <= 0) {
+      toast({
+        variant: "destructive",
+        title: "Enter how much cement arrived.",
+        description: "A shipment has to be more than zero MT.",
+      });
       return;
     }
     setSaving(true);
     try {
-      await saveSettings({
-        cementOpeningBalance: anchorBalance,
-        cementOpeningDate: anchorDate,
+      await repo.saveShipment({
+        date: shipDate,
+        amountMt: shipAmount,
+        note: shipNote.trim() || undefined,
+        createdBy: user.id,
+        createdByName: user.name,
       });
       toast({
         variant: "success",
-        title: "Opening balance saved",
-        description: "The bin card has been recalculated.",
+        title: existingShipment ? "Shipment updated" : "Shipment logged",
+        description: `${formatNumber(shipAmount, { decimals: 2 })} MT on ${format(parseISO(shipDate), "dd MMM yyyy")}. Balances have been carried forward.`,
       });
-      setAnchorOpen(false);
+      setDialogOpen(false);
+      // Show the month the shipment landed in, so it is not saved into a view
+      // the user cannot see.
+      setMonth(shipDate.slice(0, 7));
+      await load();
     } catch (e) {
       toast({
         variant: "destructive",
-        title: "Could not save the opening balance",
+        title: "Could not save the shipment",
         description: e instanceof Error ? e.message : undefined,
       });
     } finally {
@@ -199,9 +288,33 @@ export default function CementPage() {
     }
   };
 
+  const removeShipment = async () => {
+    if (!toRemove) return;
+    setRemoving(true);
+    try {
+      await repo.deleteShipment(toRemove.id);
+      toast({
+        variant: "success",
+        title: "Shipment removed",
+        description: "Later balances have been recalculated.",
+      });
+      setToRemove(null);
+      setDialogOpen(false);
+      await load();
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "Could not remove the shipment",
+        description: e instanceof Error ? e.message : undefined,
+      });
+    } finally {
+      setRemoving(false);
+    }
+  };
+
   if (!reports) {
     return (
-      <div className="space-y-5">
+      <div className="space-y-4">
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-28" />
@@ -212,8 +325,48 @@ export default function CementPage() {
     );
   }
 
+  const monthLabel = (m: string) => format(parseISO(`${m}-01`), "MMMM yyyy");
+
+  /** The New Shipment cell — a button wherever the figure can be edited. */
+  const ShipmentCell = ({
+    value,
+    date,
+    legacy,
+  }: {
+    value: number;
+    date: string;
+    legacy: boolean;
+  }) => {
+    const text =
+      value === 0 ? "—" : `+${formatNumber(value, { decimals: 2 })}`;
+    if (!canLog) {
+      return <span className="tabular-nums text-success">{text}</span>;
+    }
+    return (
+      <button
+        onClick={() => openShipmentDialog(date)}
+        title={
+          legacy
+            ? "Entered on the report itself. Click to record it as a shipment instead."
+            : value === 0
+              ? "Log a shipment on this date"
+              : "Edit this shipment"
+        }
+        className={
+          "rounded px-1.5 py-0.5 tabular-nums transition-colors hover:bg-success/10 " +
+          (value === 0
+            ? "text-muted-foreground hover:text-success"
+            : "text-success")
+        }
+      >
+        {text}
+        {legacy && <span className="ml-1 text-[10px] opacity-60">(report)</span>}
+      </button>
+    );
+  };
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Summary — 2×2 on a phone rather than four full-width cards, which
           would push the bin card itself below the fold. */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
@@ -250,52 +403,48 @@ export default function CementPage() {
         />
       </div>
 
-      {/* Anchor / setup — administrators only.
-          Everyone else has no action to take here, and showing a control they
-          cannot use (or a balance they cannot change) is just noise on a page
-          they come to in order to read the ledger. */}
-      {isAdmin && (
-        <Card className={configured ? undefined : "border-l-4 border-l-primary"}>
-          <CardContent className="flex flex-col items-start gap-3 p-4 sm:flex-row sm:items-center">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <ArrowDownToLine className="h-5 w-5" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold">
-                {configured
-                  ? `Opening balance ${formatNumber(openingBalance, { decimals: 2 })} MT as at ${format(parseISO(openingDate), "dd MMM yyyy")}`
-                  : "Set the starting opening balance"}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {configured
-                  ? "Entered once by hand. Every balance after this date is carried forward automatically from finalised reports."
-                  : "Enter the cement in the silos on your first day. From then on the card maintains itself."}
-              </p>
-            </div>
-            <Button
-              variant={configured ? "outline" : "default"}
-              size="sm"
-              className="w-full sm:w-auto"
-              onClick={openAnchor}
-            >
-              <Pencil className="h-4 w-4" />
-              {configured ? "Edit" : "Set Opening Balance"}
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Bin card */}
+      {/* Bin card. No title block above it — the page header already says what
+          this is, and a second heading only pushed the rows down the screen. */}
       <Card>
-        <CardHeader className="flex-row items-center justify-between space-y-0">
-          <CardTitle>Cement Bin Card</CardTitle>
-          {pendingDrafts > 0 && (
-            <Badge variant="warning">
-              {pendingDrafts} draft{pendingDrafts === 1 ? "" : "s"} not counted
-            </Badge>
-          )}
-        </CardHeader>
         <CardContent className="p-0">
+          {/* Toolbar */}
+          <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
+            <Select
+              value={activeMonth}
+              onValueChange={setMonth}
+              disabled={months.length === 0}
+            >
+              <SelectTrigger className="h-9 w-[11rem]">
+                <SelectValue placeholder="Month" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_MONTHS}>All months</SelectItem>
+                {months.map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {monthLabel(m)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {pendingDrafts > 0 && (
+              <Badge variant="warning">
+                {pendingDrafts} draft{pendingDrafts === 1 ? "" : "s"} not counted
+              </Badge>
+            )}
+
+            {canLog && (
+              <Button
+                size="sm"
+                className="ml-auto"
+                onClick={() => openShipmentDialog()}
+              >
+                <Plus className="h-4 w-4" />
+                Add Shipment
+              </Button>
+            )}
+          </div>
+
           {rows.length === 0 ? (
             <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
               <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-muted text-muted-foreground">
@@ -303,9 +452,11 @@ export default function CementPage() {
               </span>
               <p className="text-sm font-medium">No entries yet</p>
               <p className="mt-1 max-w-md text-xs text-muted-foreground">
-                {pendingDrafts > 0
-                  ? `There ${pendingDrafts === 1 ? "is" : "are"} ${pendingDrafts} draft report${pendingDrafts === 1 ? "" : "s"} on or after ${format(parseISO(openingDate), "dd MMM yyyy")}. Mark a report final and its row appears here automatically.`
-                  : `Rows appear here as soon as a report dated on or after ${format(parseISO(openingDate), "dd MMM yyyy")} is marked final.`}
+                {!configured
+                  ? "Set the cement opening balance in Settings, then rows appear here as reports are finalised and shipments are logged."
+                  : pendingDrafts > 0
+                    ? `There ${pendingDrafts === 1 ? "is" : "are"} ${pendingDrafts} draft report${pendingDrafts === 1 ? "" : "s"} on or after ${format(parseISO(openingDate), "dd MMM yyyy")}. Mark a report final — or log a shipment — and its row appears here automatically.`
+                    : `Rows appear here as soon as a report dated on or after ${format(parseISO(openingDate), "dd MMM yyyy")} is marked final, or a shipment is logged.`}
               </p>
             </div>
           ) : (
@@ -346,10 +497,12 @@ export default function CementPage() {
                         <TableCell className="text-right tabular-nums">
                           {formatNumber(r.openingBalance, { decimals: 2 })}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums text-success">
-                          {r.newShipment === 0
-                            ? "—"
-                            : `+${formatNumber(r.newShipment, { decimals: 2 })}`}
+                        <TableCell className="text-right">
+                          <ShipmentCell
+                            value={r.newShipment}
+                            date={r.date}
+                            legacy={r.legacyShipment}
+                          />
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-destructive">
                           {r.production === 0
@@ -374,6 +527,16 @@ export default function CementPage() {
                         </TableCell>
                       </TableRow>
                     ))}
+                    {displayRows.length === 0 && (
+                      <TableRow>
+                        <TableCell
+                          colSpan={6}
+                          className="py-16 text-center text-sm text-muted-foreground"
+                        >
+                          Nothing recorded in {monthLabel(activeMonth)}.
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </div>
@@ -381,14 +544,16 @@ export default function CementPage() {
               {/* Mobile */}
               <div className="space-y-3 p-3 md:hidden">
                 {displayRows.map((r) => (
-                  <button
+                  <div
                     key={r.date}
-                    onClick={() =>
-                      r.reportId && navigate(`/reports/${r.reportId}`)
-                    }
-                    className="w-full rounded-xl border border-border bg-card p-4 text-left shadow-sm"
+                    className="rounded-xl border border-border bg-card p-4 shadow-sm"
                   >
-                    <div className="flex items-center justify-between">
+                    <button
+                      className="flex w-full items-center justify-between text-left"
+                      onClick={() =>
+                        r.reportId && navigate(`/reports/${r.reportId}`)
+                      }
+                    >
                       <span className="text-base font-semibold">
                         {format(parseISO(r.date), "dd MMM yyyy")}
                       </span>
@@ -398,7 +563,7 @@ export default function CementPage() {
                           MT
                         </span>
                       </span>
-                    </div>
+                    </button>
                     <div className="mt-3 grid grid-cols-3 gap-2 border-t border-border pt-3 text-xs">
                       <div>
                         <div className="text-muted-foreground">Opening</div>
@@ -408,10 +573,12 @@ export default function CementPage() {
                       </div>
                       <div>
                         <div className="text-muted-foreground">Shipment</div>
-                        <div className="font-medium tabular-nums text-success">
-                          {r.newShipment === 0
-                            ? "—"
-                            : `+${formatNumber(r.newShipment, { decimals: 2 })}`}
+                        <div className="font-medium">
+                          <ShipmentCell
+                            value={r.newShipment}
+                            date={r.date}
+                            legacy={r.legacyShipment}
+                          />
                         </div>
                       </div>
                       <div>
@@ -423,8 +590,13 @@ export default function CementPage() {
                         </div>
                       </div>
                     </div>
-                  </button>
+                  </div>
                 ))}
+                {displayRows.length === 0 && (
+                  <div className="py-16 text-center text-sm text-muted-foreground">
+                    Nothing recorded in {monthLabel(activeMonth)}.
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -433,53 +605,117 @@ export default function CementPage() {
 
       <p className="text-xs text-muted-foreground">
         Current Balance = Opening Balance + New Shipment − Production. Each day's
-        Current Balance becomes the next day's Opening Balance. Only finalised
-        reports are included — a draft has no settled figures to carry forward.
+        Current Balance becomes the next day's Opening Balance. Shipments count
+        as soon as they are logged; production counts once its report is marked
+        final — a draft has no settled figures to carry forward.
       </p>
 
-      {/* Opening balance dialog */}
-      <Dialog open={anchorOpen} onOpenChange={setAnchorOpen}>
+      {/* Add / edit shipment */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Opening balance</DialogTitle>
+            <DialogTitle>
+              {existingShipment ? "Edit shipment" : "Add shipment"}
+            </DialogTitle>
             <DialogDescription>
-              The cement in the silos on your first day. This is the only figure
-              entered by hand — everything after it is calculated.
+              Cement received into the silos. It appears on the bin card as New
+              Shipment straight away and is carried into every later balance.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="anchor-date">Start Date</Label>
+              <Label htmlFor="shipment-date">Date Received</Label>
               <Input
-                id="anchor-date"
+                id="shipment-date"
                 type="date"
-                value={anchorDate}
-                onChange={(e) => setAnchorDate(e.target.value)}
+                value={shipDate}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  const match = shipments.find((s) => s.date === next);
+                  setShipDate(next);
+                  // Follow the date: switching to a day that already has a
+                  // shipment should show that amount, not the one just typed.
+                  setShipAmount(match?.amountMt ?? 0);
+                  setShipNote(match?.note ?? "");
+                }}
               />
             </div>
             <NumberField
-              label="Opening Balance (MT)"
-              value={anchorBalance}
+              label="Amount Received (MT)"
+              value={shipAmount}
               allowDecimals
               unit="MT"
-              onChange={setAnchorBalance}
+              onChange={setShipAmount}
             />
+            <div className="space-y-1.5">
+              <Label htmlFor="shipment-note">Reference (optional)</Label>
+              <Input
+                id="shipment-note"
+                placeholder="Vessel or truck reference"
+                value={shipNote}
+                onChange={(e) => setShipNote(e.target.value)}
+              />
+            </div>
+
+            {shipDate && shipDate < openingDate && (
+              <p className="rounded-lg border border-warning/40 bg-warning/10 p-2.5 text-xs text-warning-foreground">
+                This date is before the opening balance date (
+                {format(parseISO(openingDate), "dd MMM yyyy")}), so it will not
+                appear on the bin card.
+              </p>
+            )}
+
             <p className="text-xs text-muted-foreground">
-              Reports dated before the start date are left out of the card.
-              Changing either figure recalculates every row.
+              {existingShipment
+                ? `A shipment of ${formatNumber(existingShipment.amountMt, { decimals: 2 })} MT is already recorded for this date. Saving replaces it.`
+                : "One shipment is recorded per date. If more than one delivery arrives, enter the day's total."}
             </p>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAnchorOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={saveAnchor} disabled={saving}>
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              Save
-            </Button>
+          <DialogFooter className="sm:justify-between">
+            {existingShipment && canRemove ? (
+              <Button
+                variant="outline"
+                className="text-destructive"
+                onClick={() => {
+                  // Close this one first — stacking two modals fights over the
+                  // focus trap and leaves the confirm unreachable by keyboard.
+                  setDialogOpen(false);
+                  setToRemove(existingShipment);
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+                Remove
+              </Button>
+            ) : (
+              <span />
+            )}
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={saveShipment} disabled={saving}>
+                {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                {existingShipment ? "Update Shipment" : "Add Shipment"}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={Boolean(toRemove)}
+        onOpenChange={(o) => !o && setToRemove(null)}
+        title="Remove shipment?"
+        description={
+          toRemove
+            ? `The ${formatNumber(toRemove.amountMt, { decimals: 2 })} MT recorded on ${format(parseISO(toRemove.date), "dd MMM yyyy")} will be deleted and every balance after it recalculated. This cannot be undone.`
+            : ""
+        }
+        destructive
+        confirmLabel="Remove"
+        loading={removing}
+        onConfirm={removeShipment}
+      />
     </div>
   );
 }

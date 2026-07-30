@@ -15,6 +15,7 @@ export const ADMIN_FUNCTION_ID =
 export const TABLE_PROFILES = "profiles";
 export const TABLE_REPORTS = "reports";
 export const TABLE_SETTINGS = "settings";
+export const TABLE_SHIPMENTS = "shipments";
 
 /** The settings table holds exactly one row, under a fixed id. */
 export const SETTINGS_ROW_ID = "app";

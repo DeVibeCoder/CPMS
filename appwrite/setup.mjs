@@ -189,6 +189,41 @@ await str("reports", "createdByName", 128, true);
 await str("reports", "updatedByName", 128, false);
 
 // -----------------------------------------------------------------------------
+// shipments — cement received into the silos, one row per date.
+//
+// Its own table rather than a column on reports: cement arrives when a vessel
+// does, not on the daily reporting cycle, and the bin card has to show a
+// shipment the moment it is logged rather than waiting for that day's report to
+// be finalised.
+//
+// Same permission shape as reports — dispatch logs what arrives, only admin
+// removes a record — and the same label-not-session rule for read access.
+// -----------------------------------------------------------------------------
+console.log("\nTable: shipments");
+await ensureTable("shipments", "Shipments", false, [
+  Permission.read(Role.label("admin")),
+  Permission.read(Role.label("dispatch")),
+  Permission.read(Role.label("viewer")),
+  Permission.create(Role.label("admin")),
+  Permission.create(Role.label("dispatch")),
+  Permission.update(Role.label("admin")),
+  Permission.update(Role.label("dispatch")),
+  Permission.delete(Role.label("admin")),
+]);
+await str("shipments", "date", 10, true);
+await ensure("shipments.amountMt", () =>
+  tables.createFloatColumn({
+    databaseId: DATABASE_ID,
+    tableId: "shipments",
+    key: "amountMt",
+    required: true,
+  }),
+);
+await str("shipments", "note", 512, false);
+await str("shipments", "createdBy", 36, false);
+await str("shipments", "createdByName", 128, true);
+
+// -----------------------------------------------------------------------------
 console.log("\nTable: settings");
 await ensureTable("settings", "Settings", false, [
   // Same reasoning as reports: a label, not merely a session.
@@ -243,7 +278,7 @@ await str("settings", "cementOpeningDate", 10, false);
 
 // -----------------------------------------------------------------------------
 console.log("\nIndexes");
-for (const tableId of ["profiles", "reports", "settings"]) {
+for (const tableId of ["profiles", "reports", "shipments", "settings"]) {
   await waitForColumns(tableId);
 }
 // One report per day is the rule, enforced here rather than in the UI.
@@ -251,6 +286,18 @@ await ensure("reports.date (unique)", () =>
   tables.createIndex({
     databaseId: DATABASE_ID,
     tableId: "reports",
+    key: "date_unique",
+    type: "unique",
+    columns: ["date"],
+  }),
+);
+// Likewise one shipment per day: logging a second amount for a date corrects
+// the first rather than adding to it, and the index makes that a guarantee
+// rather than a convention the UI happens to follow.
+await ensure("shipments.date (unique)", () =>
+  tables.createIndex({
+    databaseId: DATABASE_ID,
+    tableId: "shipments",
     key: "date_unique",
     type: "unique",
     columns: ["date"],

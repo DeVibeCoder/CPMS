@@ -66,7 +66,13 @@ export interface SiloBalance {
   production: number;
   /**
    * Cement refilled into the silos on this date, in MT (the "Refilling" figure
-   * on the master document). Feeds the cement bin card as New Shipment.
+   * on the master document).
+   *
+   * Shipments are their own records now (see `Shipment`), because cement arrives
+   * on its own schedule rather than on the daily reporting cycle. This field is
+   * kept so the figure still prints on the report and survives a CSV round trip,
+   * and the bin card falls back to it for any date with no shipment record — so
+   * reports written before the shipments ledger existed still balance.
    *
    * Optional so every report written before this field existed still loads; an
    * absent value counts as zero.
@@ -132,6 +138,34 @@ export interface Report {
 }
 
 /**
+ * A cement shipment received into the silos.
+ *
+ * Its own record rather than a field on the daily report: cement arrives when a
+ * vessel or truck arrives, which is not the same rhythm as the daily reporting
+ * cycle, and a shipment has to show on the bin card the moment it is logged —
+ * not once somebody gets round to finalising that day's report.
+ *
+ * One row per date, matching the one-report-per-date rule. Logging a second
+ * shipment for a date that already has one replaces the amount.
+ */
+export interface Shipment {
+  id: string;
+  /** ISO date (YYYY-MM-DD) the cement was received. */
+  date: string;
+  /** Quantity received, in MT. */
+  amountMt: number;
+  /** Free text — vessel name, truck reference, anything worth recording. */
+  note?: string;
+  createdBy: string; // user id
+  createdByName: string;
+  createdAt: string; // ISO timestamp
+  updatedAt: string; // ISO timestamp
+}
+
+/** Payload for logging a shipment. Timestamps and id are assigned by the store. */
+export type NewShipment = Omit<Shipment, "id" | "createdAt" | "updatedAt">;
+
+/**
  * Application settings.
  *
  * Company details and PDF branding used to live here. They are fixed constants
@@ -153,6 +187,8 @@ export interface CompanySettings {
 export interface Database {
   users: User[];
   reports: Report[];
+  /** Optional so a backup taken before the shipments ledger existed still restores. */
+  shipments?: Shipment[];
   settings: CompanySettings;
   version: number;
 }

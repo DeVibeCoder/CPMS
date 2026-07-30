@@ -92,6 +92,8 @@ interface ImportResult {
   created: number;
   updated: number;
   skipped: number;
+  /** Shipment records written from the "Silo New Shipment MT" column. */
+  shipments: number;
   errors: string[];
 }
 
@@ -261,6 +263,11 @@ export default function ReportHistoryPage() {
    * than duplicated, so re-importing a corrected file fixes the same days
    * instead of creating a second report for each. Every row is attempted even
    * if some fail — a clerk loading years of history needs the full error list.
+   *
+   * A non-zero "Silo New Shipment MT" also writes a shipment record for that
+   * date, because the bin card reads shipments from their own ledger now. It is
+   * an upsert keyed on date, so re-importing the same month corrects the
+   * shipments rather than adding to them.
    */
   const onImportCsv = async (file?: File) => {
     if (!file || !user) return;
@@ -270,7 +277,13 @@ export default function ReportHistoryPage() {
       const { rows, errors } = parseReportsCsv(text);
 
       if (rows.length === 0) {
-        setImportResult({ created: 0, updated: 0, skipped: 0, errors });
+        setImportResult({
+          created: 0,
+          updated: 0,
+          skipped: 0,
+          shipments: 0,
+          errors,
+        });
         return;
       }
 
@@ -280,6 +293,7 @@ export default function ReportHistoryPage() {
 
       let created = 0;
       let updated = 0;
+      let shipments = 0;
       const failures = [...errors];
 
       for (const row of rows as ParsedRow[]) {
@@ -307,6 +321,28 @@ export default function ReportHistoryPage() {
           failures.push(
             `${row.date}: ${e instanceof Error ? e.message : "could not be saved"}`,
           );
+          // The shipment belongs to a report that did not save — skip it rather
+          // than leaving a shipment with no report behind it.
+          continue;
+        }
+
+        const amountMt = row.data.silo.newShipment ?? 0;
+        if (amountMt <= 0) continue;
+        try {
+          await repo.saveShipment({
+            date: row.date,
+            amountMt,
+            note: "Imported",
+            createdBy: user.id,
+            createdByName: user.name,
+          });
+          shipments++;
+        } catch (e) {
+          // The report itself landed, so this is reported as its own problem
+          // rather than counting the whole row as failed.
+          failures.push(
+            `${row.date}: the report imported but its shipment did not — ${e instanceof Error ? e.message : "could not be saved"}`,
+          );
         }
       }
 
@@ -314,6 +350,7 @@ export default function ReportHistoryPage() {
         created,
         updated,
         skipped: failures.length,
+        shipments,
         errors: failures,
       });
       await load();
@@ -322,6 +359,7 @@ export default function ReportHistoryPage() {
         created: 0,
         updated: 0,
         skipped: 0,
+        shipments: 0,
         errors: [
           e instanceof Error ? e.message : "The file could not be read.",
         ],
@@ -911,10 +949,11 @@ export default function ReportHistoryPage() {
 
           {importResult && (
             <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-4 gap-3">
                 {[
                   { label: "Created", value: importResult.created },
                   { label: "Updated", value: importResult.updated },
+                  { label: "Shipments", value: importResult.shipments },
                   { label: "Skipped", value: importResult.skipped },
                 ].map((s) => (
                   <div

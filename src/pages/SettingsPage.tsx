@@ -1,17 +1,23 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { format } from "date-fns";
 import {
+  ArrowDownToLine,
   Database,
   Download,
   Info,
+  Loader2,
   Palette,
   RotateCcw,
   Upload,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NumberField } from "@/components/report/NumberField";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { useTheme, type ThemeMode } from "@/store/theme";
+import { useSettings } from "@/store/settings";
 import { repo } from "@/data";
 import { APP_LONG_NAME, APP_NAME, ORG_NAME } from "@/config/brand";
 import { toast } from "@/hooks/use-toast";
@@ -22,6 +28,58 @@ export default function SettingsPage() {
   const [resetOpen, setResetOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
+
+  // ---- Cement opening balance ----
+  // Lives here rather than on the Inventory page: it is the one stock figure
+  // entered by hand, it is set once at go-live, and only an administrator may
+  // change it. On the ledger itself it was a permanent banner above the data
+  // for a control almost nobody would ever press.
+  const settings = useSettings((s) => s.settings);
+  const loadSettings = useSettings((s) => s.load);
+  const saveSettings = useSettings((s) => s.save);
+  const [anchorBalance, setAnchorBalance] = useState(0);
+  const [anchorDate, setAnchorDate] = useState("");
+  const [savingAnchor, setSavingAnchor] = useState(false);
+  const configured = settings?.cementOpeningDate !== undefined;
+
+  useEffect(() => {
+    void loadSettings();
+  }, [loadSettings]);
+
+  // Seed the fields once settings arrive, and again whenever they change under
+  // us (another tab, a restored backup) — but never while an edit is in flight.
+  useEffect(() => {
+    if (!settings) return;
+    setAnchorBalance(settings.cementOpeningBalance ?? 0);
+    setAnchorDate(settings.cementOpeningDate ?? format(new Date(), "yyyy-MM-01"));
+  }, [settings]);
+
+  const onSaveAnchor = async () => {
+    if (!anchorDate) {
+      toast({ variant: "destructive", title: "Choose a start date." });
+      return;
+    }
+    setSavingAnchor(true);
+    try {
+      await saveSettings({
+        cementOpeningBalance: anchorBalance,
+        cementOpeningDate: anchorDate,
+      });
+      toast({
+        variant: "success",
+        title: "Opening balance saved",
+        description: "The cement bin card has been recalculated.",
+      });
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "Could not save the opening balance",
+        description: e instanceof Error ? e.message : undefined,
+      });
+    } finally {
+      setSavingAnchor(false);
+    }
+  };
 
   const onExport = async () => {
     const db = await repo.exportDatabase();
@@ -98,6 +156,49 @@ export default function SettingsPage() {
                 </button>
               ))}
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Cement opening balance — the bin-card anchor. */}
+        <Card className={configured ? undefined : "border-l-4 border-l-primary"}>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ArrowDownToLine className="h-4 w-4 text-primary" /> Cement Opening
+              Balance
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              The cement in the silos on your first day. This is the only stock
+              figure entered by hand — every balance after it is carried forward
+              automatically from finalised reports and logged shipments.
+            </p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="anchor-date">Start Date</Label>
+                <Input
+                  id="anchor-date"
+                  type="date"
+                  value={anchorDate}
+                  onChange={(e) => setAnchorDate(e.target.value)}
+                />
+              </div>
+              <NumberField
+                label="Opening Balance (MT)"
+                value={anchorBalance}
+                allowDecimals
+                unit="MT"
+                onChange={setAnchorBalance}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Reports and shipments dated before the start date are left out of
+              the bin card. Changing either figure recalculates every row.
+            </p>
+            <Button onClick={onSaveAnchor} disabled={savingAnchor}>
+              {savingAnchor && <Loader2 className="h-4 w-4 animate-spin" />}
+              {configured ? "Save Opening Balance" : "Set Opening Balance"}
+            </Button>
           </CardContent>
         </Card>
 

@@ -1,8 +1,10 @@
 import type {
   CompanySettings,
   Database,
+  NewShipment,
   NewUser,
   Report,
+  Shipment,
   User,
   UserPatch,
 } from "@/types";
@@ -48,6 +50,18 @@ export interface Repository {
   updateReport(id: string, patch: Partial<Report>): Promise<Report>;
   deleteReport(id: string): Promise<void>;
   duplicateReport(id: string, newDate: string, author: User): Promise<Report>;
+
+  // ---- Shipments ----
+  listShipments(): Promise<Shipment[]>;
+  /**
+   * Log a shipment, replacing any existing one for the same date.
+   *
+   * Upsert rather than create: one shipment row per date mirrors the
+   * one-report-per-date rule, so re-entering a corrected amount fixes the day
+   * instead of silently doubling the stock received.
+   */
+  saveShipment(input: NewShipment): Promise<Shipment>;
+  deleteShipment(id: string): Promise<void>;
 
   // ---- Settings ----
   getSettings(): Promise<CompanySettings>;
