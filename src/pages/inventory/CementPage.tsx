@@ -146,6 +146,16 @@ export default function CementPage() {
     [rows, openingBalance, openingDate],
   );
 
+  /**
+   * Newest date first, to match Report History.
+   *
+   * Only the display order is reversed. The ledger itself has to be built
+   * oldest-first, because every row's opening balance is the previous row's
+   * closing balance — so the calculation and the presentation deliberately run
+   * in opposite directions.
+   */
+  const displayRows = useMemo(() => [...rows].reverse(), [rows]);
+
   /** Reports that are still drafts — their figures are not on the card yet. */
   const pendingDrafts = useMemo(
     () =>
@@ -318,7 +328,7 @@ export default function CementPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {rows.map((r) => (
+                    {displayRows.map((r) => (
                       <TableRow key={r.date}>
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
@@ -370,7 +380,7 @@ export default function CementPage() {
 
               {/* Mobile */}
               <div className="space-y-3 p-3 md:hidden">
-                {rows.map((r) => (
+                {displayRows.map((r) => (
                   <button
                     key={r.date}
                     onClick={() =>
