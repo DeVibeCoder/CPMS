@@ -286,9 +286,146 @@ export interface ParseResult {
   rows: ParsedRow[];
   /** Human-readable problems, one per offending line. */
   errors: string[];
+  /**
+   * How the date column was read, e.g. "M/D/YYYY". Surfaced in the import
+   * results so a file Excel rewrote is never interpreted silently.
+   */
+  dateFormat?: string;
 }
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+// -----------------------------------------------------------------------------
+// Dates.
+//
+// The template writes YYYY-MM-DD, but almost nobody imports the file the
+// template produced: they open it in Excel, and Excel rewrites the date column
+// into the machine's locale format on save — 2026-07-01 becomes 7/1/2026 — with
+// no way for the user to stop it short of formatting the column as text. A
+// strict parser turns that into thirty identical errors and a clerk who thinks
+// they mistyped every row.
+//
+// So day/month/year order is *inferred from the file as a whole* rather than
+// assumed. Across a month of daily reports some day lands past the 12th, which
+// settles the orientation for every row at once. A file too short or too
+// ambiguous to settle it is rejected with an instruction rather than guessed at
+// — importing 7/1 as January when it meant July would silently misfile stock.
+// -----------------------------------------------------------------------------
+
+/** Canonical, and always preferred: YYYY-MM-DD (or YYYY/M/D). */
+const ISO = /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/;
+/** Two small numbers then a year — orientation unknown until the file is read. */
+const NUMERIC = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/;
+/** A month *name* is unambiguous wherever it sits: 01-Jul-2026, Jul 1 2026. */
+const DAY_MONTH_NAME = /^(\d{1,2})[ \-/]([A-Za-z]{3,9})[ \-/](\d{4})$/;
+const MONTH_NAME_DAY = /^([A-Za-z]{3,9})[ \-/](\d{1,2})[ \-/,]+(\d{4})$/;
+
+const MONTH_NAMES = [
+  "jan", "feb", "mar", "apr", "may", "jun",
+  "jul", "aug", "sep", "oct", "nov", "dec",
+];
+
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/**
+ * Build an ISO date, or null when those numbers are not a real day.
+ *
+ * Round-tripping through `Date` is what catches 31 April and 30 February — a
+ * range check on the parts alone lets both through.
+ */
+function toIso(year: number, month: number, day: number): string | null {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const dt = new Date(Date.UTC(year, month - 1, day));
+  if (
+    dt.getUTCFullYear() !== year ||
+    dt.getUTCMonth() !== month - 1 ||
+    dt.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return `${year}-${pad(month)}-${pad(day)}`;
+}
+
+function monthFromName(name: string): number {
+  return MONTH_NAMES.indexOf(name.slice(0, 3).toLowerCase()) + 1;
+}
+
+type Orientation = "dmy" | "mdy" | "ambiguous" | "conflict";
+
+/**
+ * Decide whether the file's numeric dates are day-first or month-first.
+ *
+ * A value above 12 in a slot can only be a day, so one such row settles the
+ * whole file. Evidence for both is a corrupt or hand-merged file, not a format.
+ */
+function detectOrientation(raw: string[]): Orientation {
+  let dayFirst = false;
+  let monthFirst = false;
+  for (const value of raw) {
+    const m = NUMERIC.exec(value);
+    if (!m) continue;
+    if (Number(m[1]) > 12) dayFirst = true;
+    if (Number(m[2]) > 12) monthFirst = true;
+  }
+  if (dayFirst && monthFirst) return "conflict";
+  if (dayFirst) return "dmy";
+  if (monthFirst) return "mdy";
+  return "ambiguous";
+}
+
+/** Normalise one cell to ISO. Returns the reason when it cannot. */
+function normaliseDate(
+  value: string,
+  orientation: Orientation,
+): { date: string } | { error: string } {
+  const iso = ISO.exec(value);
+  if (iso) {
+    const date = toIso(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+    return date ? { date } : { error: `"${value}" is not a real date.` };
+  }
+
+  const named =
+    DAY_MONTH_NAME.exec(value) ?? MONTH_NAME_DAY.exec(value);
+  if (named) {
+    const dayFirstForm = DAY_MONTH_NAME.test(value);
+    const day = Number(dayFirstForm ? named[1] : named[2]);
+    const month = monthFromName(dayFirstForm ? named[2] : named[1]);
+    if (month === 0) return { error: `"${value}" has no month I recognise.` };
+    const date = toIso(Number(named[3]), month, day);
+    return date ? { date } : { error: `"${value}" is not a real date.` };
+  }
+
+  const numeric = NUMERIC.exec(value);
+  if (numeric) {
+    if (orientation === "ambiguous") {
+      return {
+        error:
+          `"${value}" could be day/month or month/day and the file gives no ` +
+          `way to tell. Use YYYY-MM-DD (e.g. 2026-07-01).`,
+      };
+    }
+    if (orientation === "conflict") {
+      return {
+        error:
+          `"${value}" cannot be read: the file mixes day/month and month/day ` +
+          `dates. Use YYYY-MM-DD (e.g. 2026-07-01).`,
+      };
+    }
+    const first = Number(numeric[1]);
+    const second = Number(numeric[2]);
+    const day = orientation === "dmy" ? first : second;
+    const month = orientation === "dmy" ? second : first;
+    const date = toIso(Number(numeric[3]), month, day);
+    return date ? { date } : { error: `"${value}" is not a real date.` };
+  }
+
+  return { error: `"${value}" is not a date I can read. Use YYYY-MM-DD.` };
+}
+
+const ORIENTATION_LABEL: Record<Orientation, string> = {
+  dmy: "D/M/YYYY (day first)",
+  mdy: "M/D/YYYY (month first)",
+  ambiguous: "YYYY-MM-DD",
+  conflict: "mixed — could not be determined",
+};
 
 /**
  * Parse an import file.
@@ -319,24 +456,34 @@ export function parseReportsCsv(text: string): ParseResult {
 
   const columnIndex = COLUMNS.map((c) => indexOf(c.header));
 
+  // Pass one: split every line and collect the raw dates. Orientation is a
+  // property of the file, so no row can be converted until all of them are in.
+  const parsed = lines.slice(1).map((line, i) => {
+    const cells = splitLine(line);
+    return { cells, lineNo: i + 2, raw: (cells[dateIdx] ?? "").trim() };
+  });
+
+  const orientation = detectOrientation(
+    parsed.map((p) => p.raw).filter(Boolean),
+  );
+
   const rows: ParsedRow[] = [];
   const errors: string[] = [];
   const seen = new Set<string>();
+  let usedNumeric = false;
 
-  for (let i = 1; i < lines.length; i++) {
-    const cells = splitLine(lines[i]);
-    const lineNo = i + 1;
-    const date = (cells[dateIdx] ?? "").trim();
+  // Pass two: convert.
+  for (const { cells, lineNo, raw } of parsed) {
+    if (!raw) continue; // a blank trailing row is not an error
 
-    if (!date) continue; // a blank trailing row is not an error
-    if (!ISO_DATE.test(date)) {
-      errors.push(`Line ${lineNo}: "${date}" is not a YYYY-MM-DD date.`);
+    const resolved = normaliseDate(raw, orientation);
+    if ("error" in resolved) {
+      errors.push(`Line ${lineNo}: ${resolved.error}`);
       continue;
     }
-    if (Number.isNaN(Date.parse(`${date}T00:00:00`))) {
-      errors.push(`Line ${lineNo}: "${date}" is not a real date.`);
-      continue;
-    }
+    const { date } = resolved;
+    if (NUMERIC.test(raw)) usedNumeric = true;
+
     if (seen.has(date)) {
       errors.push(`Line ${lineNo}: ${date} appears more than once in the file.`);
       continue;
@@ -365,7 +512,13 @@ export function parseReportsCsv(text: string): ParseResult {
     });
   }
 
-  return { rows, errors };
+  return {
+    rows,
+    errors,
+    // Only worth reporting when it was actually inferred. A file already in
+    // YYYY-MM-DD was not interpreted, so saying so would be noise.
+    dateFormat: usedNumeric ? ORIENTATION_LABEL[orientation] : undefined,
+  };
 }
 
 /** Trigger a browser download for generated text. */

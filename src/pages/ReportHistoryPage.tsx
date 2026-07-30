@@ -95,6 +95,8 @@ interface ImportResult {
   /** Shipment records written from the "Silo New Shipment MT" column. */
   shipments: number;
   errors: string[];
+  /** Set when the date order had to be inferred, e.g. after Excel rewrote it. */
+  dateFormat?: string;
 }
 
 export default function ReportHistoryPage() {
@@ -274,7 +276,7 @@ export default function ReportHistoryPage() {
     setImporting(true);
     try {
       const text = await file.text();
-      const { rows, errors } = parseReportsCsv(text);
+      const { rows, errors, dateFormat } = parseReportsCsv(text);
 
       if (rows.length === 0) {
         setImportResult({
@@ -283,6 +285,7 @@ export default function ReportHistoryPage() {
           skipped: 0,
           shipments: 0,
           errors,
+          dateFormat,
         });
         return;
       }
@@ -352,6 +355,7 @@ export default function ReportHistoryPage() {
         skipped: failures.length,
         shipments,
         errors: failures,
+        dateFormat,
       });
       await load();
     } catch (e) {
@@ -969,6 +973,20 @@ export default function ReportHistoryPage() {
                   </div>
                 ))}
               </div>
+
+              {/* A date order that had to be inferred is always shown. Reading
+                  7/1 as the wrong month would misfile a day's stock silently,
+                  so the guess is put in front of the user to check. */}
+              {importResult.dateFormat && (
+                <p className="rounded-lg border border-border bg-muted/30 p-2.5 text-xs text-muted-foreground">
+                  Dates in this file were read as{" "}
+                  <span className="font-semibold text-foreground">
+                    {importResult.dateFormat}
+                  </span>
+                  . Check a row or two — if that is wrong, re-save the file using
+                  YYYY-MM-DD and import again.
+                </p>
+              )}
 
               {importResult.errors.length > 0 && (
                 <div>
