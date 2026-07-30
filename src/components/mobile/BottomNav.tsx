@@ -2,6 +2,7 @@ import { useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   BarChart3,
+  Boxes,
   History,
   LayoutDashboard,
   LogOut,
@@ -42,6 +43,12 @@ const TABS: Tab[] = [
     to: "/reports",
     icon: History,
     match: (p) => p.startsWith("/reports"),
+  },
+  {
+    label: "Stock",
+    to: "/inventory",
+    icon: Boxes,
+    match: (p) => p.startsWith("/inventory"),
   },
   {
     label: "Analytics",

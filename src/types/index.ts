@@ -64,6 +64,14 @@ export interface SiloBalance {
   currentStock: number;
   sales: number;
   production: number;
+  /**
+   * Cement refilled into the silos on this date, in MT (the "Refilling" figure
+   * on the master document). Feeds the cement bin card as New Shipment.
+   *
+   * Optional so every report written before this field existed still loads; an
+   * absent value counts as zero.
+   */
+  newShipment?: number;
 }
 
 /** A grouped set of empty-bag locations (used for China & Indonesia). */
@@ -123,15 +131,23 @@ export interface Report {
   updatedByName?: string;
 }
 
+/**
+ * Application settings.
+ *
+ * Company details and PDF branding used to live here. They are fixed constants
+ * in `src/config/brand.ts` now — a single-plant deployment gains nothing from
+ * making its own name editable, and everything to lose from the name on a
+ * printed report drifting out of step with the plant.
+ */
 export interface CompanySettings {
-  companyName: string;
-  reportTitle: string;
-  pdfHeader: string;
-  pdfFooter: string;
-  logoDataUrl?: string;
-  /** MT equivalent of a single 50kg bag (0.05 MT). Used for conversions. */
-  bagWeightMt: number;
   defaultTheme: "light" | "dark" | "system";
+  /**
+   * Cement bin-card anchor. The opening balance is entered by hand once, for
+   * the first day; every balance after it is derived from finalised reports.
+   */
+  cementOpeningBalance?: number;
+  /** ISO date (YYYY-MM-DD) the opening balance above applies to. */
+  cementOpeningDate?: string;
 }
 
 export interface Database {

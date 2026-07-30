@@ -1,21 +1,21 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { format, parseISO } from "date-fns";
-import { ArrowLeft, Download, Loader2, Pencil, Printer } from "lucide-react";
+import { ArrowLeft, Download, Loader2, Lock, Pencil, Printer } from "lucide-react";
 import { usePageMeta } from "@/store/pageMeta";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { ReportDocument } from "@/components/report/ReportDocument";
 import { repo } from "@/data";
-import { useSettings } from "@/store/settings";
 import { useAuth, can } from "@/store/auth";
 import type { Report } from "@/types";
 import { downloadReportPdf, printReportPdf } from "@/lib/pdf";
+import { isLocked } from "@/lib/reportStatus";
 import { toast } from "@/hooks/use-toast";
 
 export default function ViewReportPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const settings = useSettings((s) => s.settings);
   const role = useAuth((s) => s.user?.role);
   const canEdit = can(role, "editReports");
   const canExport = can(role, "exportPdf");
@@ -43,7 +43,7 @@ export default function ViewReportPage() {
     });
   }, [id, navigate]);
 
-  if (loading || !report || !settings) {
+  if (loading || !report) {
     return (
       <div className="flex h-64 items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -60,14 +60,23 @@ export default function ViewReportPage() {
           Back
         </Button>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          {canEdit && (
-            <Button
-              variant="outline"
-              onClick={() => navigate(`/reports/${report.id}/edit`)}
-            >
-              <Pencil className="h-4 w-4" />
-              Edit
-            </Button>
+          {/* A finalised report is a record — it says so rather than offering an
+              Edit button that would only refuse. */}
+          {isLocked(report) ? (
+            <Badge variant="success" className="gap-1.5 px-2.5 py-1">
+              <Lock className="h-3.5 w-3.5" />
+              Final — locked
+            </Badge>
+          ) : (
+            canEdit && (
+              <Button
+                variant="outline"
+                onClick={() => navigate(`/reports/${report.id}/edit`)}
+              >
+                <Pencil className="h-4 w-4" />
+                Edit
+              </Button>
+            )
           )}
           {/* Print / Download live in the sticky bar on mobile */}
           {canExport && (
@@ -75,14 +84,14 @@ export default function ViewReportPage() {
               <Button
                 variant="outline"
                 className="hidden sm:inline-flex"
-                onClick={() => printReportPdf(report, settings)}
+                onClick={() => printReportPdf(report)}
               >
                 <Printer className="h-4 w-4" />
                 Print
               </Button>
               <Button
                 className="hidden sm:inline-flex"
-                onClick={() => downloadReportPdf(report, settings)}
+                onClick={() => downloadReportPdf(report)}
               >
                 <Download className="h-4 w-4" />
                 Download PDF
@@ -93,7 +102,7 @@ export default function ViewReportPage() {
       </div>
 
       <div className="flex justify-center pb-6">
-        <ReportDocument report={report} settings={settings} />
+        <ReportDocument report={report} />
       </div>
 
       {/* Sticky mobile action bar */}
@@ -102,15 +111,12 @@ export default function ViewReportPage() {
           <Button
             variant="outline"
             className="flex-1"
-            onClick={() => printReportPdf(report, settings)}
+            onClick={() => printReportPdf(report)}
           >
             <Printer className="h-4 w-4" />
             Print
           </Button>
-          <Button
-            className="flex-1"
-            onClick={() => downloadReportPdf(report, settings)}
-          >
+          <Button className="flex-1" onClick={() => downloadReportPdf(report)}>
             <Download className="h-4 w-4" />
             PDF
           </Button>

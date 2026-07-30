@@ -1,6 +1,7 @@
 import { format, parseISO } from "date-fns";
-import type { CompanySettings, Report } from "@/types";
+import type { Report } from "@/types";
 import { computeTotals } from "@/lib/calculations";
+import { PDF_FOOTER, REPORT_TITLE } from "@/config/brand";
 import { formatNumber } from "@/lib/utils";
 
 /**
@@ -98,13 +99,7 @@ function DocTable({
   );
 }
 
-export function ReportDocument({
-  report,
-  settings,
-}: {
-  report: Report;
-  settings: CompanySettings;
-}) {
+export function ReportDocument({ report }: { report: Report }) {
   const d = report.data;
   const t = computeTotals(d);
   const dateStr = format(parseISO(report.date), "dd/MM/yyyy");
@@ -114,7 +109,7 @@ export function ReportDocument({
       {/* Title */}
       <div className="mb-4 text-center">
         <span className="text-[17px] font-bold tracking-tight text-slate-900">
-          {settings.reportTitle.toUpperCase()}
+          {REPORT_TITLE}
         </span>
         <span className="ml-1 text-[17px] font-bold text-slate-900">
           ({dateStr})
@@ -327,7 +322,7 @@ export function ReportDocument({
       ) : null}
 
       <div className="mt-5 flex items-center justify-between border-t pt-2 text-[10.5px] text-slate-500" style={{ borderColor: C.border }}>
-        <span>{settings.pdfFooter}</span>
+        <span>{PDF_FOOTER}</span>
         <span>Prepared by {report.createdByName}</span>
       </div>
     </div>

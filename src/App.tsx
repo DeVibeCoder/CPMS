@@ -22,6 +22,7 @@ import AnalyticsPage from "@/pages/AnalyticsPage";
 import UsersPage from "@/pages/UsersPage";
 import SettingsPage from "@/pages/SettingsPage";
 import ProfilePage from "@/pages/ProfilePage";
+import CementPage from "@/pages/inventory/CementPage";
 import NotFoundPage from "@/pages/NotFoundPage";
 
 function BootScreen() {
@@ -105,6 +106,15 @@ export default function App() {
             }
           />
           <Route path="/analytics" element={<AnalyticsPage />} />
+
+          {/* Inventory — the cement bin card. A single page, so it renders
+              directly with no wrapper or tab bar. Everyone may look; only an
+              administrator can set the manual opening balance. */}
+          <Route path="/inventory" element={<CementPage />} />
+          <Route
+            path="/inventory/cement"
+            element={<Navigate to="/inventory" replace />}
+          />
 
           {/* Users, general settings & profile now live as tabs under /settings */}
           <Route path="/settings" element={<SettingsLayout />}>

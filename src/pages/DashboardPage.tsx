@@ -15,7 +15,6 @@ import {
   FileText,
   Printer,
   Download,
-  Search,
   ArrowRight,
   CalendarClock,
 } from "lucide-react";
@@ -374,7 +373,7 @@ export default function DashboardPage() {
                 variant="outline"
                 className="h-14 flex-col gap-1"
                 disabled={!kpiReport}
-                onClick={() => kpiReport && downloadReportPdf(kpiReport, settings)}
+                onClick={() => kpiReport && downloadReportPdf(kpiReport)}
               >
                 <Download className="h-5 w-5" />
                 <span className="text-xs">PDF</span>
@@ -384,7 +383,7 @@ export default function DashboardPage() {
                 variant="outline"
                 className="h-14 flex-col gap-1"
                 disabled={!kpiReport}
-                onClick={() => kpiReport && printReportPdf(kpiReport, settings)}
+                onClick={() => kpiReport && printReportPdf(kpiReport)}
               >
                 <Printer className="h-5 w-5" />
                 <span className="text-xs">Print</span>
@@ -418,65 +417,7 @@ export default function DashboardPage() {
         {chartNodes}
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-3">
-        <div className="lg:col-span-2">{recentCard}</div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
-          </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-2.5">
-            {canCreate && (
-              <Button
-                className="justify-start"
-                onClick={() => navigate("/reports/new")}
-              >
-                <FilePlus2 className="h-4 w-4" />
-                Create Report
-              </Button>
-            )}
-            <Button
-              variant="outline"
-              className="justify-start"
-              disabled={!kpiReport}
-              onClick={() => kpiReport && navigate(`/reports/${kpiReport.id}`)}
-            >
-              <FileText className="h-4 w-4" />
-              {todaysReport ? "Today's Report" : "Latest Report"}
-            </Button>
-            {canExport && (
-              <>
-                <Button
-                  variant="outline"
-                  className="justify-start"
-                  disabled={!kpiReport}
-                  onClick={() => kpiReport && downloadReportPdf(kpiReport, settings)}
-                >
-                  <Download className="h-4 w-4" />
-                  Generate PDF
-                </Button>
-                <Button
-                  variant="outline"
-                  className="justify-start"
-                  disabled={!kpiReport}
-                  onClick={() => kpiReport && printReportPdf(kpiReport, settings)}
-                >
-                  <Printer className="h-4 w-4" />
-                  Print
-                </Button>
-              </>
-            )}
-            <Button
-              variant="outline"
-              className="justify-start"
-              onClick={() => navigate("/reports")}
-            >
-              <Search className="h-4 w-4" />
-              Search Reports
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+      <div className="mt-6">{recentCard}</div>
     </div>
   );
 }

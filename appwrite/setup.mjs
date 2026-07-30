@@ -220,6 +220,27 @@ await ensure("settings.defaultTheme", () =>
   }),
 );
 
+// ---- Cement bin-card anchor ----
+//
+// The opening balance is the one stock figure entered by hand: every later
+// balance is derived from it by walking finalised reports forward. It lives on
+// the settings row because there is exactly one of it.
+//
+// The branding columns above (companyName, reportTitle, pdfHeader, pdfFooter,
+// logoDataUrl, bagWeightMt) are no longer read by the app — those values are
+// constants in src/config/brand.ts. They are left in place rather than dropped:
+// removing columns from a live plant database to delete fields nothing reads
+// would be risk without benefit.
+await ensure("settings.cementOpeningBalance", () =>
+  tables.createFloatColumn({
+    databaseId: DATABASE_ID,
+    tableId: "settings",
+    key: "cementOpeningBalance",
+    required: false,
+  }),
+);
+await str("settings", "cementOpeningDate", 10, false);
+
 // -----------------------------------------------------------------------------
 console.log("\nIndexes");
 for (const tableId of ["profiles", "reports", "settings"]) {

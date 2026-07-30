@@ -80,6 +80,11 @@ function IconBox({ children }: { children: React.ReactNode }) {
   );
 }
 
+const ROW = "flex h-11 shrink-0 items-center rounded-lg transition-colors";
+const LABEL = "truncate whitespace-nowrap pr-3 text-sm font-medium";
+const IDLE = "text-sidebar-foreground/80 hover:bg-white/5 hover:text-white";
+const ACTIVE = "bg-sidebar-accent text-white shadow-sm";
+
 export function SidebarNav({ collapsed = false, onNavigate }: SidebarProps) {
   const navigate = useNavigate();
   const user = useAuth((s) => s.user);
@@ -96,8 +101,8 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarProps) {
   };
 
   const name = user ? user.displayName || user.name : "";
-  const row = "flex h-11 shrink-0 items-center rounded-lg transition-colors";
-  const label = "truncate whitespace-nowrap pr-3 text-sm font-medium";
+  const row = ROW;
+  const label = LABEL;
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-sidebar text-sidebar-foreground">
@@ -123,14 +128,7 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarProps) {
             <NavLink
               to={item.to}
               onClick={onNavigate}
-              className={({ isActive }) =>
-                cn(
-                  row,
-                  isActive
-                    ? "bg-sidebar-accent text-white shadow-sm"
-                    : "text-sidebar-foreground/80 hover:bg-white/5 hover:text-white",
-                )
-              }
+              className={({ isActive }) => cn(row, isActive ? ACTIVE : IDLE)}
             >
               <IconBox>
                 <item.icon className="h-5 w-5" />

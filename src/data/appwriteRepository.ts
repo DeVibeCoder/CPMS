@@ -63,14 +63,19 @@ interface ReportRow extends Models.Row {
   updatedByName: string | null;
 }
 
+/**
+ * The settings row.
+ *
+ * The branding columns (`companyName`, `reportTitle`, `pdfHeader`, `pdfFooter`,
+ * `logoDataUrl`, `bagWeightMt`) still exist in the table but are no longer read
+ * or written — those values are constants in `src/config/brand.ts` now. They are
+ * left in place deliberately: dropping columns from a live plant database to
+ * remove fields nothing reads would be risk without benefit.
+ */
 interface SettingsRow extends Models.Row {
-  companyName: string;
-  reportTitle: string;
-  pdfHeader: string;
-  pdfFooter: string;
-  logoDataUrl: string | null;
-  bagWeightMt: number;
   defaultTheme: CompanySettings["defaultTheme"];
+  cementOpeningBalance: number | null;
+  cementOpeningDate: string | null;
 }
 
 const ROLES: Role[] = ["admin", "dispatch", "viewer"];
@@ -83,22 +88,6 @@ function defined<T extends object>(obj: T): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(obj).filter(([, v]) => v !== undefined),
   );
-}
-
-/**
- * Like `defined`, but for patches where "the key is present and undefined"
- * means "clear this field" — removing the company logo, for instance. Appwrite
- * stores an absent optional value as null.
- */
-function definedOrNull<T extends object>(
-  patch: T,
-  keys: (keyof T)[],
-): Record<string, unknown> {
-  const out = defined(patch);
-  for (const key of keys) {
-    if (key in patch && patch[key] === undefined) out[key as string] = null;
-  }
-  return out;
 }
 
 /** The authoritative role is the account label, not anything in the database. */
@@ -154,13 +143,12 @@ function toReport(row: ReportRow): Report {
 
 function toSettings(row: SettingsRow): CompanySettings {
   return {
-    companyName: row.companyName,
-    reportTitle: row.reportTitle,
-    pdfHeader: row.pdfHeader,
-    pdfFooter: row.pdfFooter,
-    logoDataUrl: row.logoDataUrl ?? undefined,
-    bagWeightMt: Number(row.bagWeightMt),
     defaultTheme: row.defaultTheme,
+    cementOpeningBalance:
+      row.cementOpeningBalance === null
+        ? undefined
+        : Number(row.cementOpeningBalance),
+    cementOpeningDate: row.cementOpeningDate ?? undefined,
   };
 }
 
@@ -170,6 +158,15 @@ function fail(message: string, e: unknown, conflict?: string): never {
     if (conflict && e.code === 409) throw new Error(conflict);
     if (e.code === 401 || e.code === 403) {
       throw new Error("You do not have permission to do that.");
+    }
+    // "Unknown attribute" means the database predates a column the app now
+    // writes. That is a setup step, not a user error, so say which column and
+    // what to run rather than surfacing Appwrite's wording.
+    const missing = /Unknown attribute: "?([\w.]+)"?/.exec(e.message)?.[1];
+    if (missing) {
+      throw new Error(
+        `The database is missing the "${missing}" column. Run "npm run appwrite:setup" (or add the column in the Appwrite console) and try again.`,
+      );
     }
     throw new Error(`${message} ${e.message}`.trim());
   }
@@ -606,9 +603,7 @@ export class AppwriteRepository implements Repository {
   async updateSettings(
     patch: Partial<CompanySettings>,
   ): Promise<CompanySettings> {
-    // `logoDataUrl: undefined` is how the settings page removes a logo, so it
-    // has to reach the backend as an explicit null rather than being dropped.
-    const data = definedOrNull(patch, ["logoDataUrl"]);
+    const data = defined(patch);
     if (Object.keys(data).length === 0) return this.getSettings();
 
     try {
@@ -691,7 +686,6 @@ export class AppwriteRepository implements Repository {
     } catch (e) {
       fail("Could not clear reports.", e);
     }
-    // The key has to be present for `definedOrNull` to clear a stored logo.
-    await this.updateSettings({ ...DEFAULT_SETTINGS, logoDataUrl: undefined });
+    await this.updateSettings({ ...DEFAULT_SETTINGS });
   }
 }

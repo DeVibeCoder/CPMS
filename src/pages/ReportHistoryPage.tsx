@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { format, parseISO } from "date-fns";
 import {
@@ -6,7 +6,9 @@ import {
   Copy,
   Download,
   Eye,
+  FileDown,
   FilePlus2,
+  Loader2,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -14,6 +16,8 @@ import {
   Search,
   SlidersHorizontal,
   Trash2,
+  Undo2,
+  Upload,
 } from "lucide-react";
 import { usePageMeta } from "@/store/pageMeta";
 import {
@@ -49,13 +53,29 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { repo } from "@/data";
 import { useAuth, can } from "@/store/auth";
-import { useSettings } from "@/store/settings";
 import type { Report } from "@/types";
+import { cn } from "@/lib/utils";
 import { computeTotals } from "@/lib/calculations";
 import { downloadReportPdf, printReportPdf } from "@/lib/pdf";
+import { isLocked } from "@/lib/reportStatus";
+import {
+  downloadText,
+  parseReportsCsv,
+  reportsToCsv,
+  templateCsv,
+  type ParsedRow,
+} from "@/lib/reportCsv";
 import { formatNumber } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 
@@ -67,14 +87,26 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 
+/** Outcome of a bulk import, shown in the results dialog. */
+interface ImportResult {
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: string[];
+}
+
 export default function ReportHistoryPage() {
   const navigate = useNavigate();
   const user = useAuth((s) => s.user);
-  const settings = useSettings((s) => s.settings);
   const canCreate = can(user?.role, "createReports");
   const canEdit = can(user?.role, "editReports");
   const canExport = can(user?.role, "exportPdf");
   const canDelete = can(user?.role, "deleteReports");
+  // Bulk import rewrites history in one action, so it is admin-only.
+  const canBulk = can(user?.role, "backup");
+  // Reverting unlocks a signed-off record, so it is an administrator override —
+  // dispatch can finalise a report but cannot undo one.
+  const canRevert = can(user?.role, "settings");
 
   const [reports, setReports] = useState<Report[] | null>(null);
   const [query, setQuery] = useState("");
@@ -87,6 +119,11 @@ export default function ReportHistoryPage() {
   const [toDelete, setToDelete] = useState<Report | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [toRevert, setToRevert] = useState<Report | null>(null);
+  const [reverting, setReverting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const importCsvRef = useRef<HTMLInputElement>(null);
 
   usePageMeta("Report History", "Manage all daily cement stock reports.");
   const activeFilters = (month !== "all" ? 1 : 0) + (year !== "all" ? 1 : 0);
@@ -158,6 +195,144 @@ export default function ReportHistoryPage() {
     }
   };
 
+  /**
+   * Send a finalised report back to draft.
+   *
+   * The only way to change a final report — it becomes editable again, and drops
+   * off the cement bin card until it is finalised a second time. Deliberately an
+   * explicit action rather than an implicit unlock on the edit screen.
+   */
+  const doRevert = async () => {
+    if (!toRevert || !user) return;
+    setReverting(true);
+    try {
+      await repo.updateReport(toRevert.id, {
+        status: "draft",
+        updatedByName: user.name,
+      });
+      toast({
+        variant: "success",
+        title: "Reverted to draft",
+        description:
+          "The report is editable again and is no longer counted on the cement bin card.",
+      });
+      setToRevert(null);
+      await load();
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "Could not revert the report",
+        description: e instanceof Error ? e.message : undefined,
+      });
+    } finally {
+      setReverting(false);
+    }
+  };
+
+  const onDownloadTemplate = () => {
+    downloadText("cpsm-report-template.csv", templateCsv());
+    toast({
+      variant: "success",
+      title: "Template downloaded",
+      description:
+        "Fill one row per report date, then use Import. Extra columns are ignored.",
+    });
+  };
+
+  const onExportCsv = () => {
+    if (!reports || reports.length === 0) {
+      toast({ variant: "destructive", title: "There is nothing to export yet." });
+      return;
+    }
+    downloadText(
+      `cpsm-reports-${format(new Date(), "yyyy-MM-dd")}.csv`,
+      reportsToCsv(reports),
+    );
+    toast({
+      variant: "success",
+      title: `Exported ${reports.length} report${reports.length === 1 ? "" : "s"}`,
+    });
+  };
+
+  /**
+   * Import a filled template.
+   *
+   * Rows are matched to existing reports by date and updated in place rather
+   * than duplicated, so re-importing a corrected file fixes the same days
+   * instead of creating a second report for each. Every row is attempted even
+   * if some fail — a clerk loading years of history needs the full error list.
+   */
+  const onImportCsv = async (file?: File) => {
+    if (!file || !user) return;
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const { rows, errors } = parseReportsCsv(text);
+
+      if (rows.length === 0) {
+        setImportResult({ created: 0, updated: 0, skipped: 0, errors });
+        return;
+      }
+
+      const existing = new Map(
+        (await repo.listReports()).map((r) => [r.date, r]),
+      );
+
+      let created = 0;
+      let updated = 0;
+      const failures = [...errors];
+
+      for (const row of rows as ParsedRow[]) {
+        try {
+          const match = existing.get(row.date);
+          if (match) {
+            await repo.updateReport(match.id, {
+              status: row.status,
+              data: row.data,
+              updatedByName: user.name,
+            });
+            updated++;
+          } else {
+            await repo.createReport({
+              date: row.date,
+              status: row.status,
+              data: row.data,
+              createdBy: user.id,
+              createdByName: user.name,
+              updatedByName: user.name,
+            });
+            created++;
+          }
+        } catch (e) {
+          failures.push(
+            `${row.date}: ${e instanceof Error ? e.message : "could not be saved"}`,
+          );
+        }
+      }
+
+      setImportResult({
+        created,
+        updated,
+        skipped: failures.length,
+        errors: failures,
+      });
+      await load();
+    } catch (e) {
+      setImportResult({
+        created: 0,
+        updated: 0,
+        skipped: 0,
+        errors: [
+          e instanceof Error ? e.message : "The file could not be read.",
+        ],
+      });
+    } finally {
+      setImporting(false);
+      // Allow re-picking the same file after a correction.
+      if (importCsvRef.current) importCsvRef.current.value = "";
+    }
+  };
+
   const doDuplicate = async (r: Report) => {
     if (!user) return;
     const newDate = format(new Date(), "yyyy-MM-dd");
@@ -183,25 +358,28 @@ export default function ReportHistoryPage() {
           <MoreHorizontal className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-44">
+      <DropdownMenuContent align="end" className="w-48">
         <DropdownMenuItem onClick={() => navigate(`/reports/${r.id}`)}>
           <Eye className="h-4 w-4" /> View
         </DropdownMenuItem>
-        {canEdit && (
+        {/* A draft is editable by anyone who may edit. A final report can only
+            be reopened by an administrator, so dispatch simply sees no action. */}
+        {canEdit && !isLocked(r) && (
           <DropdownMenuItem onClick={() => navigate(`/reports/${r.id}/edit`)}>
             <Pencil className="h-4 w-4" /> Edit
           </DropdownMenuItem>
         )}
+        {canRevert && isLocked(r) && (
+          <DropdownMenuItem onClick={() => setToRevert(r)}>
+            <Undo2 className="h-4 w-4" /> Revert to Draft
+          </DropdownMenuItem>
+        )}
         {canExport && (
           <>
-            <DropdownMenuItem
-              onClick={() => settings && printReportPdf(r, settings)}
-            >
+            <DropdownMenuItem onClick={() => printReportPdf(r)}>
               <Printer className="h-4 w-4" /> Print
             </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => settings && downloadReportPdf(r, settings)}
-            >
+            <DropdownMenuItem onClick={() => downloadReportPdf(r)}>
               <Download className="h-4 w-4" /> Download PDF
             </DropdownMenuItem>
           </>
@@ -305,7 +483,9 @@ export default function ReportHistoryPage() {
               onClick={() => setFiltersOpen(true)}
             >
               <SlidersHorizontal className="h-4 w-4" />
-              Filters
+              {/* Admins find the bulk import/export inside this sheet too, so
+                  the label says so rather than hiding them behind "Filters". */}
+              {canBulk ? "Filters & Tools" : "Filters"}
               {activeFilters > 0 && (
                 <span className="ml-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[11px] font-semibold text-primary-foreground">
                   {activeFilters}
@@ -313,9 +493,47 @@ export default function ReportHistoryPage() {
               )}
             </Button>
 
+            {/* Bulk tools — admin only. Grouped to the right so they read as
+                maintenance actions rather than part of the daily workflow. */}
+            {canBulk && (
+              <div className="hidden shrink-0 gap-2 md:ml-auto md:flex">
+                <Button variant="outline" size="sm" onClick={onDownloadTemplate}>
+                  <FileDown className="h-4 w-4" />
+                  Template
+                </Button>
+                <input
+                  ref={importCsvRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="hidden"
+                  onChange={(e) => onImportCsv(e.target.files?.[0])}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={importing}
+                  onClick={() => importCsvRef.current?.click()}
+                >
+                  {importing ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="h-4 w-4" />
+                  )}
+                  Import
+                </Button>
+                <Button variant="outline" size="sm" onClick={onExportCsv}>
+                  <Download className="h-4 w-4" />
+                  Export
+                </Button>
+              </div>
+            )}
+
             {canCreate && (
               <Button
-                className="hidden shrink-0 sm:ml-1 md:inline-flex"
+                className={cn(
+                  "hidden shrink-0 md:inline-flex",
+                  !canBulk && "sm:ml-auto",
+                )}
                 onClick={() => navigate("/reports/new")}
               >
                 <FilePlus2 className="h-4 w-4" />
@@ -393,15 +611,23 @@ export default function ReportHistoryPage() {
                               >
                                 <Eye className="h-4 w-4" />
                               </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                title="Edit"
-                                onClick={() => navigate(`/reports/${r.id}/edit`)}
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
+                              {/* Only drafts get an inline Edit. A final report
+                                  shows nothing here — the status badge already
+                                  says it is closed, so a disabled control would
+                                  add noise without adding information. */}
+                              {canEdit && !isLocked(r) && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  title="Edit"
+                                  onClick={() =>
+                                    navigate(`/reports/${r.id}/edit`)
+                                  }
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                              )}
                               <RowActionsMenu r={r} />
                             </div>
                           </TableCell>
@@ -599,9 +825,140 @@ export default function ReportHistoryPage() {
                 Show {filtered.length} result{filtered.length === 1 ? "" : "s"}
               </Button>
             </div>
+
+            {/* Bulk tools. They live in the desktop toolbar, which is hidden on
+                a phone — without this an administrator on mobile would have no
+                route to them at all. */}
+            {canBulk && (
+              <div className="space-y-2 border-t border-border pt-4">
+                <p className="text-sm font-medium">Bulk data (admin)</p>
+                <div className="grid grid-cols-1 gap-2">
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    className="justify-start"
+                    onClick={() => {
+                      setFiltersOpen(false);
+                      onDownloadTemplate();
+                    }}
+                  >
+                    <FileDown className="h-4 w-4" />
+                    Download Template
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    className="justify-start"
+                    disabled={importing}
+                    onClick={() => {
+                      setFiltersOpen(false);
+                      importCsvRef.current?.click();
+                    }}
+                  >
+                    {importing ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Upload className="h-4 w-4" />
+                    )}
+                    Import Reports
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    className="justify-start"
+                    onClick={() => {
+                      setFiltersOpen(false);
+                      onExportCsv();
+                    }}
+                  >
+                    <Download className="h-4 w-4" />
+                    Export Reports
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </SheetContent>
       </Sheet>
+
+      <ConfirmDialog
+        open={Boolean(toRevert)}
+        onOpenChange={(o) => !o && setToRevert(null)}
+        title="Revert to draft?"
+        description={
+          toRevert
+            ? `The report for ${format(parseISO(toRevert.date), "dd MMM yyyy")} will become editable again and will drop off the cement bin card until it is marked final once more. Later balances will be recalculated.`
+            : ""
+        }
+        confirmLabel="Revert to Draft"
+        loading={reverting}
+        onConfirm={doRevert}
+      />
+
+      {/* Import results — shown after every import, successful or not, so a
+          partial load is never silent. */}
+      <Dialog
+        open={Boolean(importResult)}
+        onOpenChange={(o) => !o && setImportResult(null)}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Import finished</DialogTitle>
+            <DialogDescription>
+              Rows are matched to existing reports by date and updated in place.
+            </DialogDescription>
+          </DialogHeader>
+
+          {importResult && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { label: "Created", value: importResult.created },
+                  { label: "Updated", value: importResult.updated },
+                  { label: "Skipped", value: importResult.skipped },
+                ].map((s) => (
+                  <div
+                    key={s.label}
+                    className="rounded-lg border border-border bg-muted/30 p-3 text-center"
+                  >
+                    <div className="text-2xl font-bold tabular-nums">
+                      {s.value}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {s.label}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {importResult.errors.length > 0 && (
+                <div>
+                  <p className="mb-1.5 text-sm font-semibold text-destructive">
+                    {importResult.errors.length} row
+                    {importResult.errors.length === 1 ? "" : "s"} could not be
+                    imported
+                  </p>
+                  <div className="max-h-56 overflow-auto rounded-lg border border-destructive/30 bg-destructive/5 p-3 scrollbar-thin">
+                    <ul className="space-y-1 text-xs text-destructive">
+                      {importResult.errors.map((err, i) => (
+                        <li key={i}>{err}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Fix those rows and import the file again — the rows that
+                    succeeded will simply be updated rather than duplicated.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button onClick={() => setImportResult(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={Boolean(toDelete)}

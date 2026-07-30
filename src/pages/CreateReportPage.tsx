@@ -23,6 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { NumberField } from "@/components/report/NumberField";
 import { computeTotals, emptyReportData } from "@/lib/calculations";
+import { LOCKED_MESSAGE, isLocked } from "@/lib/reportStatus";
 import { cn, formatNumber } from "@/lib/utils";
 import type { ReportData, ReportStatus } from "@/types";
 import { repo } from "@/data";
@@ -109,15 +110,29 @@ export default function CreateReportPage() {
     if (!id) return;
     setLoading(true);
     repo.getReport(id).then((r) => {
-      if (r) {
-        setData(r.data);
-        setDate(r.date);
-        setStatus(r.status);
-        setSourceCreatedBy({ id: r.createdBy, name: r.createdByName });
-      } else {
+      if (!r) {
         toast({ variant: "destructive", title: "Report not found." });
         navigate("/reports");
+        setLoading(false);
+        return;
       }
+      // A finalised report is a record. The UI hides the Edit action, but the
+      // route is still reachable by URL, so refuse it here too rather than
+      // trusting the only guard to be the one that is easy to bypass.
+      if (isLocked(r)) {
+        toast({
+          variant: "destructive",
+          title: "This report is final",
+          description: LOCKED_MESSAGE,
+        });
+        navigate(`/reports/${r.id}`, { replace: true });
+        setLoading(false);
+        return;
+      }
+      setData(r.data);
+      setDate(r.date);
+      setStatus(r.status);
+      setSourceCreatedBy({ id: r.createdBy, name: r.createdByName });
       setLoading(false);
     });
   }, [id, navigate]);
@@ -275,7 +290,7 @@ export default function CreateReportPage() {
 
   const sec3 = (
     <SectionCard icon={Container} index={3} title="Silo Balance">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <NumberField
           label="Current Stock"
           value={data.silo.currentStock}
@@ -284,9 +299,9 @@ export default function CreateReportPage() {
           unit="MT"
         />
         <NumberField
-          label="Sales"
-          value={data.silo.sales}
-          onChange={(v) => setSilo("sales", v)}
+          label="New Shipment"
+          value={data.silo.newShipment ?? 0}
+          onChange={(v) => setSilo("newShipment", v)}
           allowDecimals
           unit="MT"
         />
@@ -297,7 +312,21 @@ export default function CreateReportPage() {
           allowDecimals
           unit="MT"
         />
+        <NumberField
+          label="Sales"
+          value={data.silo.sales}
+          onChange={(v) => setSilo("sales", v)}
+          allowDecimals
+          unit="MT"
+        />
       </div>
+      {/* The bin card is derived from these two figures, so it is worth saying
+          where they end up — a wrong number here moves every later balance. */}
+      <p className="text-xs text-muted-foreground">
+        New Shipment (cement refilled into the silos) and Production feed the
+        cement bin card under Inventory once this report is marked{" "}
+        <strong>final</strong>.
+      </p>
     </SectionCard>
   );
 

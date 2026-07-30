@@ -2,8 +2,9 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { Styles } from "jspdf-autotable";
 import { format, parseISO } from "date-fns";
-import type { CompanySettings, Report } from "@/types";
+import type { Report } from "@/types";
 import { computeTotals } from "@/lib/calculations";
+import { PDF_FOOTER, REPORT_TITLE } from "@/config/brand";
 import { formatNumber } from "@/lib/utils";
 
 /**
@@ -117,10 +118,7 @@ function drawTable(opts: TableOpts): number {
   return doc.lastAutoTable.finalY as number;
 }
 
-export function generateReportPdf(
-  report: Report,
-  settings: CompanySettings,
-): jsPDF {
+export function generateReportPdf(report: Report): jsPDF {
   const d = report.data;
   const t = computeTotals(d);
   const doc = new jsPDF({ unit: "pt", format: "a4" });
@@ -134,12 +132,9 @@ export function generateReportPdf(
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
   doc.setTextColor(20, 20, 20);
-  doc.text(
-    `${settings.reportTitle.toUpperCase()}  (${dateStr})`,
-    pageW / 2,
-    46,
-    { align: "center" },
-  );
+  doc.text(`${REPORT_TITLE}  (${dateStr})`, pageW / 2, 46, {
+    align: "center",
+  });
 
   const top = 64;
 
@@ -336,7 +331,7 @@ export function generateReportPdf(
     doc.setFontSize(7.5);
     doc.setTextColor(...MUTED);
     doc.setFont("helvetica", "normal");
-    doc.text(settings.pdfFooter, MARGIN, pageH - 18);
+    doc.text(PDF_FOOTER, MARGIN, pageH - 18);
     doc.text(
       `Prepared by ${report.createdByName}  •  Page ${i} of ${pageCount}`,
       pageW - MARGIN,
@@ -352,12 +347,12 @@ export function reportFileName(report: Report): string {
   return `Cement-Stock-${report.date}.pdf`;
 }
 
-export function downloadReportPdf(report: Report, settings: CompanySettings) {
-  generateReportPdf(report, settings).save(reportFileName(report));
+export function downloadReportPdf(report: Report) {
+  generateReportPdf(report).save(reportFileName(report));
 }
 
-export function printReportPdf(report: Report, settings: CompanySettings) {
-  const doc = generateReportPdf(report, settings);
+export function printReportPdf(report: Report) {
+  const doc = generateReportPdf(report);
   doc.autoPrint();
   const url = doc.output("bloburl");
   const win = window.open(url, "_blank");
