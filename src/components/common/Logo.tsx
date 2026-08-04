@@ -1,6 +1,14 @@
 import { cn } from "@/lib/utils";
+import { APP_NAME } from "@/config/brand";
 
-/** CPSM mark — a stylised cement silo / industrial glyph. */
+/**
+ * The CPSM mark.
+ *
+ * Renders `public/icon-180.png` — a 180px derivative of the master artwork in
+ * `public/icon.png`, which at 1254px is far too heavy to hand to a 30px slot in
+ * the sidebar. 180px still covers the largest use (56px) at 3x device pixel
+ * ratio, and the same file backs the iOS home-screen icon.
+ */
 export function Logo({
   className,
   size = 36,
@@ -9,46 +17,32 @@ export function Logo({
   className?: string;
   size?: number;
   /**
-   * `brand` is the blue tile used on light surfaces. `onDark` is a translucent
-   * tile for use over a photograph or a dark panel — filtering the brand tile to
-   * white instead would flatten the glyph into a solid block, since the mark is
-   * already white on blue.
+   * The artwork is blue on an opaque white field, so it carries its own
+   * contrast on either surface and is never recoloured. `tone` only settles how
+   * the tile edge is drawn: `brand` gets a hairline that keeps it from
+   * dissolving into a white card, `onDark` a lighter ring that reads over a
+   * photograph or a dark panel.
    */
   tone?: "brand" | "onDark";
 }) {
   return (
     <div
       className={cn(
-        "flex items-center justify-center rounded-lg text-white",
+        "flex shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white",
         tone === "brand"
-          ? "bg-gradient-to-br from-primary to-blue-700 shadow-sm"
-          : "bg-white/15 ring-1 ring-inset ring-white/30 backdrop-blur-sm",
+          ? "ring-1 ring-inset ring-black/[7%] shadow-sm"
+          : "ring-1 ring-inset ring-white/30",
         className,
       )}
       style={{ width: size, height: size }}
     >
-      <svg
-        width={size * 0.6}
-        height={size * 0.6}
-        viewBox="0 0 32 32"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <path
-          d="M6 22 L16 5 L26 22 Z"
-          stroke="currentColor"
-          strokeWidth="2.2"
-          strokeLinejoin="round"
-        />
-        <rect
-          x="10"
-          y="22"
-          width="12"
-          height="5"
-          rx="1"
-          fill="currentColor"
-        />
-      </svg>
+      <img
+        src="/icon-180.png"
+        alt={APP_NAME}
+        width={size}
+        height={size}
+        className="h-full w-full object-contain"
+      />
     </div>
   );
 }

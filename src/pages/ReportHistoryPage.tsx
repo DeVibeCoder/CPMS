@@ -84,6 +84,33 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 
+/**
+ * Per-action colours for the row action icons.
+ *
+ * Written out as whole class strings because Tailwind scans source text — a
+ * composed `text-${tone}-600` would never reach the stylesheet. The 600/400 pair
+ * is deliberate: 600 carries on the white card, 400 on the dark one, and both
+ * stay short of neon at a 14px glyph.
+ *
+ * `hover:text-*` is repeated rather than redundant. The ghost button's base
+ * styling includes `hover:text-accent-foreground`, which would otherwise grey
+ * the icon out on hover; naming the same modifier here lets tailwind-merge drop
+ * it and keeps the hue through the interaction.
+ */
+const TONES = {
+  blue: "text-blue-600 hover:text-blue-600 hover:bg-blue-500/10 dark:text-blue-400 dark:hover:text-blue-400",
+  amber:
+    "text-amber-600 hover:text-amber-600 hover:bg-amber-500/10 dark:text-amber-400 dark:hover:text-amber-400",
+  orange:
+    "text-orange-600 hover:text-orange-600 hover:bg-orange-500/10 dark:text-orange-400 dark:hover:text-orange-400",
+  violet:
+    "text-violet-600 hover:text-violet-600 hover:bg-violet-500/10 dark:text-violet-400 dark:hover:text-violet-400",
+  emerald:
+    "text-emerald-600 hover:text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400 dark:hover:text-emerald-400",
+  cyan: "text-cyan-600 hover:text-cyan-600 hover:bg-cyan-500/10 dark:text-cyan-400 dark:hover:text-cyan-400",
+  red: "text-red-600 hover:text-red-600 hover:bg-red-500/10 dark:text-red-400 dark:hover:text-red-400",
+} as const;
+
 /** Outcome of a bulk import, shown in the results dialog. */
 interface ImportResult {
   created: number;
@@ -410,6 +437,11 @@ export default function ReportHistoryPage() {
    * Everything a role may do is visible at a glance — there is no overflow menu,
    * so an action is either an icon or it is not offered at all. The icon is the
    * whole control, so each carries a tooltip and an accessible name.
+   *
+   * Each action has its own hue so a row can be scanned by colour rather than by
+   * reading six near-identical grey glyphs. Colour is never the only signal —
+   * the shape and the tooltip still identify the action for anyone who cannot
+   * separate the hues.
    */
   const RowActions = ({ r }: { r: Report }) => {
     const actions: Array<{
@@ -417,13 +449,15 @@ export default function ReportHistoryPage() {
       label: string;
       icon: typeof Eye;
       onClick: () => void;
-      destructive?: boolean;
+      /** Hue for this action. See TONES. */
+      tone: keyof typeof TONES;
     }> = [
       {
         key: "view",
         label: "View",
         icon: Eye,
         onClick: () => navigate(`/reports/${r.id}`),
+        tone: "blue",
       },
     ];
 
@@ -435,6 +469,7 @@ export default function ReportHistoryPage() {
         label: "Edit",
         icon: Pencil,
         onClick: () => navigate(`/reports/${r.id}/edit`),
+        tone: "amber",
       });
     }
     if (canRevert && isLocked(r)) {
@@ -443,6 +478,7 @@ export default function ReportHistoryPage() {
         label: "Revert to draft",
         icon: Undo2,
         onClick: () => setToRevert(r),
+        tone: "orange",
       });
     }
     if (canExport) {
@@ -452,12 +488,14 @@ export default function ReportHistoryPage() {
           label: "Print",
           icon: Printer,
           onClick: () => printReportPdf(r),
+          tone: "violet",
         },
         {
           key: "pdf",
           label: "Download PDF",
           icon: Download,
           onClick: () => downloadReportPdf(r),
+          tone: "emerald",
         },
       );
     }
@@ -467,6 +505,7 @@ export default function ReportHistoryPage() {
         label: "Duplicate",
         icon: Copy,
         onClick: () => doDuplicate(r),
+        tone: "cyan",
       });
     }
     if (canDelete) {
@@ -475,12 +514,12 @@ export default function ReportHistoryPage() {
         label: "Delete",
         icon: Trash2,
         onClick: () => setToDelete(r),
-        destructive: true,
+        tone: "red",
       });
     }
 
     return (
-      <div className="flex items-center justify-end gap-0.5">
+      <div className="flex items-center justify-end gap-0.5 md:gap-0">
         {actions.map((a) => (
           <Tooltip key={a.key} delayDuration={200}>
             <TooltipTrigger asChild>
@@ -490,14 +529,16 @@ export default function ReportHistoryPage() {
                 aria-label={a.label}
                 className={cn(
                   // Compact on the desktop table, comfortably tappable on the
-                  // mobile card where the same row is reused.
-                  "h-9 w-9 shrink-0 md:h-7 md:w-7",
-                  a.destructive &&
-                    "text-destructive hover:bg-destructive/10 hover:text-destructive",
+                  // mobile card where the same row is reused. The glyph size has
+                  // to be set here rather than on the icon itself: the button
+                  // base carries `[&_svg]:size-4`, which outranks a plain class
+                  // on the svg.
+                  "h-9 w-9 shrink-0 md:h-6 md:w-6 md:[&_svg]:size-3.5",
+                  TONES[a.tone],
                 )}
                 onClick={a.onClick}
               >
-                <a.icon className="h-4 w-4 md:h-[15px] md:w-[15px]" />
+                <a.icon />
               </Button>
             </TooltipTrigger>
             <TooltipContent>{a.label}</TooltipContent>
