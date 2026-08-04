@@ -230,7 +230,7 @@ export default function DashboardPage() {
   const chartNodes = [
     <TrendChart
       key="stock"
-      title="Current Stock Trend"
+      title="Current Silo Stock Trend"
       data={filteredTrend}
       type="area"
       decimals={0}
@@ -254,15 +254,15 @@ export default function DashboardPage() {
       ]}
     />,
     <TrendChart
-      key="cement"
-      title="Cement Stock Trend"
+      key="jumbo"
+      title="Jumbo Bags Stock Trend"
       data={filteredTrend}
       type="area"
       decimals={0}
       series={[
         {
-          key: "totalCementMt",
-          name: "Total Cement (MT)",
+          key: "jumbo",
+          name: "Jumbo Bags",
           color: CHART_COLORS.violet,
         },
       ]}

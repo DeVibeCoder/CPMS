@@ -9,7 +9,6 @@ import {
   FileDown,
   FilePlus2,
   Loader2,
-  MoreHorizontal,
   Pencil,
   Plus,
   Printer,
@@ -40,12 +39,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Select,
   SelectContent,
@@ -64,9 +61,9 @@ import {
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { repo } from "@/data";
 import { useAuth, can } from "@/store/auth";
+import { useReportFilters } from "@/store/reportFilters";
 import type { Report } from "@/types";
 import { cn } from "@/lib/utils";
-import { computeTotals } from "@/lib/calculations";
 import { downloadReportPdf, printReportPdf } from "@/lib/pdf";
 import { isLocked } from "@/lib/reportStatus";
 import {
@@ -114,9 +111,12 @@ export default function ReportHistoryPage() {
 
   const [reports, setReports] = useState<Report[] | null>(null);
   const [query, setQuery] = useState("");
-  // Default to the current month so today's reporting period is shown first.
-  const [month, setMonth] = useState(String(new Date().getMonth()));
-  const [year, setYear] = useState("all");
+  // The month/year selection lives in a store rather than in this component, so
+  // it survives navigating away to view or edit a report and back again.
+  const month = useReportFilters((s) => s.month);
+  const year = useReportFilters((s) => s.year);
+  const setMonth = useReportFilters((s) => s.setMonth);
+  const setYear = useReportFilters((s) => s.setYear);
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
@@ -170,9 +170,20 @@ export default function ReportHistoryPage() {
     return rows;
   }, [reports, query, month, year, sortKey, sortDir]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  /**
+   * A single month is at most 31 rows, so it is shown whole inside a fixed,
+   * scrollable area — paging through a month a third at a time made comparing
+   * days needlessly awkward. "All Months" can be years of history, so that view
+   * keeps its pager.
+   */
+  const monthView = month !== "all";
+  const totalPages = monthView
+    ? 1
+    : Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
-  const pageRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const pageRows = monthView
+    ? filtered
+    : filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -393,58 +404,108 @@ export default function ReportHistoryPage() {
     }
   };
 
-  const RowActionsMenu = ({ r }: { r: Report }) => (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-9 w-9">
-          <MoreHorizontal className="h-4 w-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-48">
-        <DropdownMenuItem onClick={() => navigate(`/reports/${r.id}`)}>
-          <Eye className="h-4 w-4" /> View
-        </DropdownMenuItem>
-        {/* A draft is editable by anyone who may edit. A final report can only
-            be reopened by an administrator, so dispatch simply sees no action. */}
-        {canEdit && !isLocked(r) && (
-          <DropdownMenuItem onClick={() => navigate(`/reports/${r.id}/edit`)}>
-            <Pencil className="h-4 w-4" /> Edit
-          </DropdownMenuItem>
-        )}
-        {canRevert && isLocked(r) && (
-          <DropdownMenuItem onClick={() => setToRevert(r)}>
-            <Undo2 className="h-4 w-4" /> Revert to Draft
-          </DropdownMenuItem>
-        )}
-        {canExport && (
-          <>
-            <DropdownMenuItem onClick={() => printReportPdf(r)}>
-              <Printer className="h-4 w-4" /> Print
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => downloadReportPdf(r)}>
-              <Download className="h-4 w-4" /> Download PDF
-            </DropdownMenuItem>
-          </>
-        )}
-        {canCreate && (
-          <DropdownMenuItem onClick={() => doDuplicate(r)}>
-            <Copy className="h-4 w-4" /> Duplicate
-          </DropdownMenuItem>
-        )}
-        {canDelete && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="text-destructive focus:text-destructive"
-              onClick={() => setToDelete(r)}
-            >
-              <Trash2 className="h-4 w-4" /> Delete
-            </DropdownMenuItem>
-          </>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+  /**
+   * One compact icon per permitted action, laid out in a single row.
+   *
+   * Everything a role may do is visible at a glance — there is no overflow menu,
+   * so an action is either an icon or it is not offered at all. The icon is the
+   * whole control, so each carries a tooltip and an accessible name.
+   */
+  const RowActions = ({ r }: { r: Report }) => {
+    const actions: Array<{
+      key: string;
+      label: string;
+      icon: typeof Eye;
+      onClick: () => void;
+      destructive?: boolean;
+    }> = [
+      {
+        key: "view",
+        label: "View",
+        icon: Eye,
+        onClick: () => navigate(`/reports/${r.id}`),
+      },
+    ];
+
+    // A draft is editable by anyone who may edit. A final report can only be
+    // reopened by an administrator, so dispatch simply sees neither action.
+    if (canEdit && !isLocked(r)) {
+      actions.push({
+        key: "edit",
+        label: "Edit",
+        icon: Pencil,
+        onClick: () => navigate(`/reports/${r.id}/edit`),
+      });
+    }
+    if (canRevert && isLocked(r)) {
+      actions.push({
+        key: "revert",
+        label: "Revert to draft",
+        icon: Undo2,
+        onClick: () => setToRevert(r),
+      });
+    }
+    if (canExport) {
+      actions.push(
+        {
+          key: "print",
+          label: "Print",
+          icon: Printer,
+          onClick: () => printReportPdf(r),
+        },
+        {
+          key: "pdf",
+          label: "Download PDF",
+          icon: Download,
+          onClick: () => downloadReportPdf(r),
+        },
+      );
+    }
+    if (canCreate) {
+      actions.push({
+        key: "duplicate",
+        label: "Duplicate",
+        icon: Copy,
+        onClick: () => doDuplicate(r),
+      });
+    }
+    if (canDelete) {
+      actions.push({
+        key: "delete",
+        label: "Delete",
+        icon: Trash2,
+        onClick: () => setToDelete(r),
+        destructive: true,
+      });
+    }
+
+    return (
+      <div className="flex items-center justify-end gap-0.5">
+        {actions.map((a) => (
+          <Tooltip key={a.key} delayDuration={200}>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={a.label}
+                className={cn(
+                  // Compact on the desktop table, comfortably tappable on the
+                  // mobile card where the same row is reused.
+                  "h-9 w-9 shrink-0 md:h-7 md:w-7",
+                  a.destructive &&
+                    "text-destructive hover:bg-destructive/10 hover:text-destructive",
+                )}
+                onClick={a.onClick}
+              >
+                <a.icon className="h-4 w-4 md:h-[15px] md:w-[15px]" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{a.label}</TooltipContent>
+          </Tooltip>
+        ))}
+      </div>
+    );
+  };
 
   const SortHead = ({ label, k }: { label: string; k: SortKey }) => (
     <TableHead>
@@ -592,23 +653,33 @@ export default function ReportHistoryPage() {
             </div>
           ) : (
             <>
-              {/* Desktop / tablet table */}
+              {/* Desktop / tablet table. In month view the body scrolls inside
+                  a fixed area with the header pinned, so the toolbar and the
+                  page around it never move as months are switched. */}
               <div className="hidden md:block">
-                <Table>
-                  <TableHeader>
+                <Table
+                  containerClassName={cn(
+                    monthView && "max-h-[calc(100vh-19rem)] min-h-[20rem]",
+                  )}
+                >
+                  <TableHeader
+                    className={cn(
+                      monthView && "sticky top-0 z-10 bg-card shadow-[0_1px_0_hsl(var(--border))]",
+                    )}
+                  >
                     <TableRow>
                       <SortHead label="Date" k="date" />
                       <SortHead label="Created By" k="createdByName" />
                       <SortHead label="Created" k="createdAt" />
                       <SortHead label="Last Updated" k="updatedAt" />
-                      <TableHead className="text-right">Cement (MT)</TableHead>
+                      <TableHead className="text-right">Production (MT)</TableHead>
+                      <TableHead className="text-right">Sales (MT)</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {pageRows.map((r) => {
-                      const t = computeTotals(r.data);
                       return (
                         <TableRow key={r.id}>
                           <TableCell className="font-medium">
@@ -630,7 +701,12 @@ export default function ReportHistoryPage() {
                             {format(parseISO(r.updatedAt), "dd MMM, HH:mm")}
                           </TableCell>
                           <TableCell className="text-right font-semibold tabular-nums">
-                            {formatNumber(t.totalCementMt, { decimals: 0 })}
+                            {formatNumber(r.data.silo.production, {
+                              decimals: 2,
+                            })}
+                          </TableCell>
+                          <TableCell className="text-right font-semibold tabular-nums">
+                            {formatNumber(r.data.silo.sales, { decimals: 2 })}
                           </TableCell>
                           <TableCell>
                             <Badge
@@ -643,35 +719,7 @@ export default function ReportHistoryPage() {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                title="View"
-                                onClick={() => navigate(`/reports/${r.id}`)}
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                              {/* Only drafts get an inline Edit. A final report
-                                  shows nothing here — the status badge already
-                                  says it is closed, so a disabled control would
-                                  add noise without adding information. */}
-                              {canEdit && !isLocked(r) && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  title="Edit"
-                                  onClick={() =>
-                                    navigate(`/reports/${r.id}/edit`)
-                                  }
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                              )}
-                              <RowActionsMenu r={r} />
-                            </div>
+                            <RowActions r={r} />
                           </TableCell>
                         </TableRow>
                       );
@@ -679,7 +727,7 @@ export default function ReportHistoryPage() {
                     {pageRows.length === 0 && (
                       <TableRow>
                         <TableCell
-                          colSpan={7}
+                          colSpan={8}
                           className="py-16 text-center text-sm text-muted-foreground"
                         >
                           No reports match your filters.
@@ -691,9 +739,11 @@ export default function ReportHistoryPage() {
               </div>
 
               {/* Mobile report cards */}
+              {/* Mobile keeps a single scroll surface — the page itself — so a
+                  whole month simply scrolls with it rather than trapping the
+                  finger inside a nested scroller. */}
               <div className="space-y-3 p-3 md:hidden">
                 {pageRows.map((r) => {
-                  const t = computeTotals(r.data);
                   return (
                     <div
                       key={r.id}
@@ -711,29 +761,35 @@ export default function ReportHistoryPage() {
                             {format(parseISO(r.date), "EEEE")}
                           </div>
                         </button>
-                        <div className="flex items-center gap-1">
-                          <Badge
-                            variant={
-                              r.status === "final" ? "success" : "secondary"
-                            }
-                            className="capitalize"
-                          >
-                            {r.status}
-                          </Badge>
-                          <RowActionsMenu r={r} />
-                        </div>
+                        <Badge
+                          variant={
+                            r.status === "final" ? "success" : "secondary"
+                          }
+                          className="capitalize"
+                        >
+                          {r.status}
+                        </Badge>
                       </div>
                       <div className="mt-3 grid grid-cols-2 gap-y-2 border-t border-border pt-3 text-xs">
+                        <div>
+                          <div className="text-muted-foreground">Production</div>
+                          <div className="font-medium tabular-nums text-foreground">
+                            {formatNumber(r.data.silo.production, {
+                              decimals: 2,
+                            })}{" "}
+                            MT
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-muted-foreground">Sales</div>
+                          <div className="font-medium tabular-nums text-foreground">
+                            {formatNumber(r.data.silo.sales, { decimals: 2 })} MT
+                          </div>
+                        </div>
                         <div>
                           <div className="text-muted-foreground">Created By</div>
                           <div className="font-medium text-foreground">
                             {r.createdByName}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-muted-foreground">Cement</div>
-                          <div className="font-medium tabular-nums text-foreground">
-                            {formatNumber(t.totalCementMt, { decimals: 0 })} MT
                           </div>
                         </div>
                         <div>
@@ -742,6 +798,9 @@ export default function ReportHistoryPage() {
                             {format(parseISO(r.updatedAt), "dd MMM, HH:mm")}
                           </div>
                         </div>
+                      </div>
+                      <div className="mt-3 border-t border-border pt-2">
+                        <RowActions r={r} />
                       </div>
                     </div>
                   );
@@ -753,6 +812,16 @@ export default function ReportHistoryPage() {
                 )}
               </div>
             </>
+          )}
+
+          {/* Month view has no pager, so the count is stated instead — the
+              scroll area otherwise gives no sense of how much is in it. */}
+          {reports && monthView && (
+            <div className="border-t border-border p-4 text-sm text-muted-foreground">
+              {filtered.length} report{filtered.length === 1 ? "" : "s"} in{" "}
+              {MONTHS[Number(month)]}
+              {year !== "all" ? ` ${year}` : ""}
+            </div>
           )}
 
           {/* Pagination */}

@@ -323,7 +323,6 @@ export function ReportDocument({ report }: { report: Report }) {
 
       <div className="mt-5 flex items-center justify-between border-t pt-2 text-[10.5px] text-slate-500" style={{ borderColor: C.border }}>
         <span>{PDF_FOOTER}</span>
-        <span>Prepared by {report.createdByName}</span>
       </div>
     </div>
   );

@@ -332,12 +332,9 @@ export function generateReportPdf(report: Report): jsPDF {
     doc.setTextColor(...MUTED);
     doc.setFont("helvetica", "normal");
     doc.text(PDF_FOOTER, MARGIN, pageH - 18);
-    doc.text(
-      `Prepared by ${report.createdByName}  •  Page ${i} of ${pageCount}`,
-      pageW - MARGIN,
-      pageH - 18,
-      { align: "right" },
-    );
+    doc.text(`Page ${i} of ${pageCount}`, pageW - MARGIN, pageH - 18, {
+      align: "right",
+    });
   }
 
   return doc;

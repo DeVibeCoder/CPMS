@@ -3,9 +3,17 @@ import { cn } from "@/lib/utils";
 
 const Table = React.forwardRef<
   HTMLTableElement,
-  React.HTMLAttributes<HTMLTableElement>
->(({ className, ...props }, ref) => (
-  <div className="relative w-full overflow-auto scrollbar-thin">
+  React.HTMLAttributes<HTMLTableElement> & {
+    /** Styles the scroll container — e.g. to cap its height so it scrolls. */
+    containerClassName?: string;
+  }
+>(({ className, containerClassName, ...props }, ref) => (
+  <div
+    className={cn(
+      "relative w-full overflow-auto scrollbar-thin",
+      containerClassName,
+    )}
+  >
     <table
       ref={ref}
       className={cn("w-full caption-bottom text-sm", className)}

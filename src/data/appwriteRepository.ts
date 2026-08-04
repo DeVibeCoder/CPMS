@@ -33,6 +33,11 @@ import {
   TABLE_SETTINGS,
   TABLE_SHIPMENTS,
   clearRememberSession,
+  clearSessionMarker,
+  hasProbedForSession,
+  hasSessionMarker,
+  markSessionActive,
+  markSessionProbed,
   sessionOutlivedItsTab,
   setRememberSession,
 } from "@/lib/appwrite";
@@ -315,22 +320,48 @@ export class AppwriteRepository implements Repository {
     password: string,
     remember: boolean,
   ): Promise<User | null> {
+    // A leftover session makes Appwrite reject the new one outright. Only worth
+    // a round trip when there is actually a session to clear.
+    if (hasSessionMarker()) {
+      try {
+        await this.account.deleteSession({ sessionId: "current" });
+      } catch {
+        /* there was nothing to clear */
+      }
+      clearSessionMarker();
+    }
+
     // Must happen before sign-in so the "remember" marker matches this session.
     setRememberSession(remember);
 
-    // A leftover session makes Appwrite reject the new one outright.
-    try {
-      await this.account.deleteSession({ sessionId: "current" });
-    } catch {
-      /* there was nothing to clear */
-    }
-
-    try {
-      await this.account.createEmailPasswordSession({
+    const createSession = () =>
+      this.account.createEmailPasswordSession({
         email: email.trim().toLowerCase(),
         password,
       });
+
+    try {
+      try {
+        await createSession();
+      } catch (e) {
+        // The marker is a hint, not proof: a session can exist without one (a
+        // browser signed in before the marker shipped). Never let that turn a
+        // correct password into "invalid credentials" — clear the session
+        // Appwrite says is in the way and try the one time it can now succeed.
+        if (
+          !(
+            e instanceof AppwriteException &&
+            e.type === "user_session_already_exists"
+          )
+        ) {
+          throw e;
+        }
+        await this.account.deleteSession({ sessionId: "current" });
+        await createSession();
+      }
+      markSessionActive();
     } catch (e) {
+      clearRememberSession();
       if (e instanceof AppwriteException && e.type === "user_blocked") {
         throw new Error("This account has been disabled.");
       }
@@ -363,6 +394,22 @@ export class AppwriteRepository implements Repository {
   }
 
   async getCurrentUser(): Promise<User | null> {
+    if (!hasSessionMarker()) {
+      // Nobody has signed in from this browser, so there is nothing to restore
+      // — and asking Appwrite would only produce a 401 in the console.
+      if (hasProbedForSession()) return null;
+      // …except on the very first load, which may be a browser that signed in
+      // before the marker existed. Ask once, adopt any session found, and never
+      // ask again — otherwise shipping this would sign everyone out.
+      markSessionProbed();
+      try {
+        await this.account.get();
+        markSessionActive();
+      } catch {
+        return null;
+      }
+    }
+
     // "Remember me" was unticked and the tab that signed in has since closed.
     if (sessionOutlivedItsTab()) {
       await this.logout();
@@ -373,6 +420,9 @@ export class AppwriteRepository implements Repository {
     try {
       me = await this.account.get();
     } catch {
+      // The marker outlived its session (expired or revoked server-side). Drop
+      // it so the next load skips the call rather than repeating the failure.
+      clearRememberSession();
       return null;
     }
 
@@ -385,7 +435,9 @@ export class AppwriteRepository implements Repository {
   }
 
   async logout(): Promise<void> {
+    const hadSession = hasSessionMarker();
     clearRememberSession();
+    if (!hadSession) return;
     try {
       await this.account.deleteSession({ sessionId: "current" });
     } catch {

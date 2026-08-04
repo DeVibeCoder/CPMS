@@ -21,7 +21,7 @@ export const ORG_NAME = "Thilafushi Industrial Complex";
 export const REPORT_TITLE = "CEMENT STOCK";
 
 /** Footer line printed on every page of the PDF. */
-export const PDF_FOOTER = `Confidential — ${ORG_NAME}`;
+export const PDF_FOOTER = ORG_NAME;
 
 /** MT equivalent of one 50KG bag, used for tonnage conversions. */
 export const BAG_WEIGHT_MT = 0.05;
