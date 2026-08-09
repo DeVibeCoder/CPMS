@@ -142,3 +142,51 @@ side with the original — the row/column values match.
 - Restrict signup so accounts are only ever created through the app.
 
 All four are covered step by step in [`appwrite/README.md`](appwrite/README.md).
+
+---
+
+## Keeping the Appwrite Free plan project alive
+
+Since 20 February 2026, Appwrite pauses Free plan projects after **7 consecutive
+days without development activity in the Appwrite Console**. Appwrite have said
+explicitly that runtime traffic does not count:
+
+> Runtime traffic such as API calls, SDK usage, or end-user visits does not
+> count toward this.
+
+So the plant signing in every day does **not** keep the backend alive. This
+project has already been paused once for exactly this reason, which took the app
+down until it was restored by hand in the console.
+
+**The automatic mitigation.** `api/keepalive.mjs` runs daily from a Vercel cron
+and performs a real schema write (create a scratch table, delete it again) —
+the same control-plane endpoint the Console uses when you add a collection.
+It needs two environment variables on Vercel, in addition to the two the build
+already uses:
+
+| Variable          | Value                                                        |
+| ----------------- | ------------------------------------------------------------ |
+| `APPWRITE_API_KEY`| The existing server key (Databases scope is enough)           |
+| `CRON_SECRET`     | Any long random string — Vercel sends it back as the bearer token |
+
+Without `CRON_SECRET` the route refuses to run, so it can never be triggered by
+a stranger. Run it by hand any time with `npm run appwrite:keepalive`.
+
+**Do not trust it blindly.** Appwrite does not document what counts as
+development activity, and users report that merely *opening* the console is not
+enough. The cron targets the most plausible signal; it is not a guarantee. Two
+things exist because of that:
+
+- A failed run answers non-2xx, so Vercel marks the cron invocation as failed
+  and it shows in the dashboard rather than failing silently.
+- Sign-in now says "the Appwrite project may be paused" instead of "invalid
+  email or password" when the backend is unreachable — see
+  `backendUnavailableMessage` in [`src/data/appwriteRepository.ts`](src/data/appwriteRepository.ts).
+
+**The manual fallback that definitely works.** Open the console once a week and
+make a small real change — rename a table, edit a permission, redeploy the
+function. If the app ever shows the "project may be paused" message, restore it
+at <https://cloud.appwrite.io/console>; the data is not deleted by a pause.
+
+The only guaranteed fix is a paid plan — Appwrite state that the Free plan is
+for development and learning, not production apps needing uptime.

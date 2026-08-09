@@ -42,6 +42,32 @@ import {
   setRememberSession,
 } from "@/lib/appwrite";
 
+/**
+ * The only Appwrite failures that genuinely mean "wrong email or password".
+ *
+ * Everything else that can make sign-in fail — a paused project, a 5xx, an
+ * outage — must never be reported as bad credentials. It sent one person
+ * hunting for a typo while the backend was actually paused, which is the exact
+ * wrong place to look and costs an afternoon.
+ */
+const CREDENTIAL_FAILURES = new Set([
+  "user_invalid_credentials",
+  "user_not_found",
+]);
+
+/** Turn a non-credential Appwrite failure into something worth reading. */
+function backendUnavailableMessage(e: AppwriteException): string {
+  // Appwrite Cloud stops serving a paused project with a 5xx. The Free plan
+  // pauses after 7 days without console activity, so this is the likely one.
+  if (e.code >= 500 || e.code === 0) {
+    return (
+      "The backend is not responding. The Appwrite project may be paused — " +
+      "ask an administrator to check the Appwrite console."
+    );
+  }
+  return `Sign-in failed: ${e.message}`;
+}
+
 // -----------------------------------------------------------------------------
 // Row shapes.
 //
@@ -362,10 +388,21 @@ export class AppwriteRepository implements Repository {
       markSessionActive();
     } catch (e) {
       clearRememberSession();
-      if (e instanceof AppwriteException && e.type === "user_blocked") {
-        throw new Error("This account has been disabled.");
+      if (e instanceof AppwriteException) {
+        if (e.type === "user_blocked") {
+          throw new Error("This account has been disabled.");
+        }
+        if (!CREDENTIAL_FAILURES.has(e.type)) {
+          throw new Error(backendUnavailableMessage(e));
+        }
+        return null;
       }
-      return null;
+      // Not an Appwrite answer at all — DNS, CORS or an offline browser. A
+      // paused project can fail this way too, before it answers anything.
+      throw new Error(
+        "Cannot reach the server. Check your connection — if it is fine, the " +
+          "backend may be paused.",
+      );
     }
 
     const me = await this.account.get();
