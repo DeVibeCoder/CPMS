@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { Role, User } from "@/types";
 import { repo } from "@/data";
 import { useSettings } from "./settings";
+import { useReportFilters } from "./reportFilters";
 
 interface AuthState {
   user: User | null;
@@ -87,6 +88,10 @@ export const useAuth = create<AuthState>((set, get) => ({
     // Fire-and-forget: the UI should never wait on a sign-out round trip.
     void repo.logout();
     useSettings.getState().clear();
+    // Leaving the Reports section already resets this, but signing out must not
+    // depend on which screen it happened from — the next person to sign in on
+    // this browser starts at the current month either way.
+    useReportFilters.getState().reset();
     set({ user: null });
   },
 

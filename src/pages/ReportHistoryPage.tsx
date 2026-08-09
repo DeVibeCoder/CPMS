@@ -138,8 +138,9 @@ export default function ReportHistoryPage() {
 
   const [reports, setReports] = useState<Report[] | null>(null);
   const [query, setQuery] = useState("");
-  // The month/year selection lives in a store rather than in this component, so
-  // it survives navigating away to view or edit a report and back again.
+  // The month/year selection lives in a store rather than in this component so
+  // it survives opening a report and coming back. ReportsScope bounds how long
+  // that lasts: leaving the section returns it to the current month.
   const month = useReportFilters((s) => s.month);
   const year = useReportFilters((s) => s.year);
   const setMonth = useReportFilters((s) => s.setMonth);

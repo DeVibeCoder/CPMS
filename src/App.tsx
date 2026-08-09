@@ -24,6 +24,7 @@ import SettingsPage from "@/pages/SettingsPage";
 import ProfilePage from "@/pages/ProfilePage";
 import CementPage from "@/pages/inventory/CementPage";
 import NotFoundPage from "@/pages/NotFoundPage";
+import { ReportsScope } from "@/components/report/ReportsScope";
 
 function BootScreen() {
   return (
@@ -87,24 +88,30 @@ export default function App() {
           }
         >
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/reports" element={<ReportHistoryPage />} />
-          <Route
-            path="/reports/new"
-            element={
-              <RequireCapability capability="createReports">
-                <CreateReportPage />
-              </RequireCapability>
-            }
-          />
-          <Route path="/reports/:id" element={<ViewReportPage />} />
-          <Route
-            path="/reports/:id/edit"
-            element={
-              <RequireCapability capability="editReports">
-                <CreateReportPage />
-              </RequireCapability>
-            }
-          />
+
+          {/* Every report screen shares one scope, so the Report History month
+              survives opening or editing a day but resets on the way out. */}
+          <Route element={<ReportsScope />}>
+            <Route path="/reports" element={<ReportHistoryPage />} />
+            <Route
+              path="/reports/new"
+              element={
+                <RequireCapability capability="createReports">
+                  <CreateReportPage />
+                </RequireCapability>
+              }
+            />
+            <Route path="/reports/:id" element={<ViewReportPage />} />
+            <Route
+              path="/reports/:id/edit"
+              element={
+                <RequireCapability capability="editReports">
+                  <CreateReportPage />
+                </RequireCapability>
+              }
+            />
+          </Route>
+
           <Route path="/analytics" element={<AnalyticsPage />} />
 
           {/* Inventory — the cement bin card. A single page, so it renders
