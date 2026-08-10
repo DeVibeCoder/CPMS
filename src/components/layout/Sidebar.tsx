@@ -1,51 +1,20 @@
-import { useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
-import { LogOut } from "lucide-react";
+import { NavLink } from "react-router-dom";
 import { NAV_ITEMS } from "@/config/nav";
 import { useAuth, can } from "@/store/auth";
-import { cn, initials, roleLabel } from "@/lib/utils";
+import { cn, roleLabel } from "@/lib/utils";
 import { Logo } from "@/components/common/Logo";
+import { UserAvatar } from "@/components/common/UserAvatar";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { ConfirmDialog } from "@/components/common/ConfirmDialog";
-import type { User } from "@/types";
 
 interface SidebarProps {
   /** Icon-only collapsed mode (desktop pref or tablet). */
   collapsed?: boolean;
   /** Called after navigating (used to close the mobile drawer). */
   onNavigate?: () => void;
-}
-
-/** Avatar: uploaded picture when available, otherwise tinted initials. */
-function UserAvatar({ user, size = 32 }: { user: User; size?: number }) {
-  const name = user.displayName || user.name;
-  if (user.avatarUrl) {
-    return (
-      <img
-        src={user.avatarUrl}
-        alt={name}
-        className="rounded-full object-cover"
-        style={{ width: size, height: size }}
-      />
-    );
-  }
-  return (
-    <span
-      className="flex items-center justify-center rounded-full font-semibold text-white"
-      style={{
-        width: size,
-        height: size,
-        backgroundColor: user.avatarColor ?? "#1d4ed8",
-        fontSize: size * 0.38,
-      }}
-    >
-      {initials(name)}
-    </span>
-  );
 }
 
 /** Optionally wraps a trigger in a right-side tooltip (used when collapsed). */
@@ -86,19 +55,11 @@ const IDLE = "text-sidebar-foreground/80 hover:bg-white/5 hover:text-white";
 const ACTIVE = "bg-sidebar-accent text-white shadow-sm";
 
 export function SidebarNav({ collapsed = false, onNavigate }: SidebarProps) {
-  const navigate = useNavigate();
   const user = useAuth((s) => s.user);
-  const logout = useAuth((s) => s.logout);
-  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const items = NAV_ITEMS.filter(
     (item) => !item.requires || can(user?.role, item.requires),
   );
-
-  const doLogout = () => {
-    logout();
-    navigate("/login");
-  };
 
   const name = user ? user.displayName || user.name : "";
   const row = ROW;
@@ -150,25 +111,8 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarProps) {
 
       {user && (
         <div className="shrink-0">
-          {/* Logout — directly above the user-details divider */}
-          <div className="px-3 pb-2">
-            <MaybeTooltip show={collapsed} label="Log out">
-              <button
-                onClick={() => setConfirmOpen(true)}
-                className={cn(
-                  row,
-                  "w-full text-sidebar-foreground/80 hover:bg-red-500/15 hover:text-red-300",
-                )}
-              >
-                <IconBox>
-                  <LogOut className="h-5 w-5" />
-                </IconBox>
-                {!collapsed && <span className={label}>Log out</span>}
-              </button>
-            </MaybeTooltip>
-          </div>
-
-          {/* User details */}
+          {/* Who is signed in. Signing out lives in the top bar — same corner
+              on desktop as it already is on mobile. */}
           <div className="border-t border-sidebar-border px-3 py-3">
             <MaybeTooltip
               show={collapsed}
@@ -193,16 +137,6 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarProps) {
           </div>
         </div>
       )}
-
-      <ConfirmDialog
-        open={confirmOpen}
-        onOpenChange={setConfirmOpen}
-        title="Log out?"
-        description="You will be returned to the sign-in screen and any unsaved changes will be lost."
-        confirmLabel="Log out"
-        cancelLabel="Stay signed in"
-        onConfirm={doLogout}
-      />
     </div>
   );
 }
