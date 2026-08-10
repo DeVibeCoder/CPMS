@@ -85,7 +85,24 @@ export default function UsersPage() {
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
 
-  const load = () => repo.listUsers().then(setUsers);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  /**
+   * Reading the user list needs the privileged route, so it can fail for
+   * reasons the page cannot fix: the route is unreachable, or the deployment is
+   * missing its service key. Without catching it `users` stays null and the
+   * skeleton spins for ever, which reads as "the app is broken" and hides the
+   * one sentence that would explain why.
+   */
+  const load = () => {
+    setLoadError(null);
+    return repo
+      .listUsers()
+      .then(setUsers)
+      .catch((e: unknown) =>
+        setLoadError(e instanceof Error ? e.message : "Could not load users."),
+      );
+  };
   useEffect(() => {
     load();
   }, []);
@@ -241,7 +258,17 @@ export default function UsersPage() {
 
       <Card>
         <CardContent className="p-0">
-          {!users ? (
+          {loadError ? (
+            <div className="space-y-3 p-6 text-center">
+              <p className="font-medium">Could not load users</p>
+              <p className="mx-auto max-w-md text-sm text-muted-foreground">
+                {loadError}
+              </p>
+              <Button variant="outline" size="sm" onClick={load}>
+                Try again
+              </Button>
+            </div>
+          ) : !users ? (
             <div className="space-y-2 p-4">
               {Array.from({ length: 3 }).map((_, i) => (
                 <Skeleton key={i} className="h-12" />
