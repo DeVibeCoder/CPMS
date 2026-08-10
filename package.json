@@ -16,6 +16,8 @@
     "appwrite:keepalive": "node appwrite/keepalive.mjs",
     "backup:appwrite": "node supabase/export-appwrite.mjs",
     "db:migrate": "node supabase/apply-migrations.mjs",
+    "migrate:supabase": "node supabase/migrate.mjs",
+    "verify:supabase": "node supabase/verify.mjs",
     "db:push": "node supabase/push.mjs"
   },
   "dependencies": {
