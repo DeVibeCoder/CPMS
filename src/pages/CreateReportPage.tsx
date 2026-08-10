@@ -601,6 +601,10 @@ export default function CreateReportPage() {
         <div className="md:col-span-2">{sec4}</div>
         {sec6}
         {sec7}
+        {/* Full width: a remarks box the width of a column is a cramped place
+            to write a sentence, and this grid is explicit rather than driven by
+            `sections`, so anything added there must be added here too. */}
+        <div className="md:col-span-2">{sec8}</div>
       </div>
 
       {/* Mobile: one section at a time */}
