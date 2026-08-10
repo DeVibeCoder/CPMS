@@ -2,12 +2,14 @@ import { NavLink, useLocation } from "react-router-dom";
 import {
   BarChart3,
   Boxes,
+  CalendarClock,
   History,
   LayoutDashboard,
   Settings,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { can, useAuth, type Capability } from "@/store/auth";
 
 interface Tab {
   label: string;
@@ -15,6 +17,8 @@ interface Tab {
   icon: LucideIcon;
   /** Active when the path starts with this (for nested routes). */
   match: (path: string) => boolean;
+  /** Capability required to see this tab (undefined = everyone). */
+  requires?: Capability;
 }
 
 const TABS: Tab[] = [
@@ -42,6 +46,16 @@ const TABS: Tab[] = [
     icon: BarChart3,
     match: (p) => p.startsWith("/analytics"),
   },
+  // Attendance is administrator-only and still under development. There is no
+  // sidebar on mobile, so without a tab it would be unreachable on a phone —
+  // and it is filtered out for everyone else, whose bar is unchanged.
+  {
+    label: "Attendance",
+    to: "/attendance",
+    icon: CalendarClock,
+    match: (p) => p.startsWith("/attendance"),
+    requires: "attendance",
+  },
   // Settings is a hub — Users & Profile are tabs inside it. It replaces the old
   // "Menu" sheet; theme and sign-out moved to the header's account controls.
   {
@@ -57,11 +71,13 @@ const TABS: Tab[] = [
 
 export function BottomNav() {
   const location = useLocation();
+  const role = useAuth((s) => s.user?.role);
+  const tabs = TABS.filter((t) => !t.requires || can(role, t.requires));
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/90 backdrop-blur-lg pb-safe">
       <div className="mx-auto flex max-w-lg items-stretch gap-1 px-2 py-1">
-        {TABS.map((tab) => {
+        {tabs.map((tab) => {
           const active = tab.match(location.pathname);
           return (
             <NavLink

@@ -29,6 +29,10 @@ export const PERMISSIONS = {
     createReports: true,
     editReports: true,
     exportPdf: true,
+    // Attendance is under development and runs on mock data. Administrator-only
+    // until the plant signs off the working-hour policy and it is connected to
+    // real staff records.
+    attendance: true,
   },
   // Can create, edit and generate (print/export) reports — but not delete,
   // manage users, or change settings.
@@ -40,6 +44,7 @@ export const PERMISSIONS = {
     createReports: true,
     editReports: true,
     exportPdf: true,
+    attendance: false,
   },
   // Read-only. Can view everything but change nothing.
   viewer: {
@@ -50,6 +55,7 @@ export const PERMISSIONS = {
     createReports: false,
     editReports: false,
     exportPdf: false,
+    attendance: false,
   },
 } as const;
 

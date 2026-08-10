@@ -19,6 +19,7 @@
     "migrate:supabase": "node supabase/migrate.mjs",
     "verify:supabase": "node supabase/verify.mjs",
     "test:admin": "node supabase/test-admin-users.mjs",
+    "test:attendance": "node scripts/test-attendance.mjs",
     "db:push": "node supabase/push.mjs"
   },
   "dependencies": {

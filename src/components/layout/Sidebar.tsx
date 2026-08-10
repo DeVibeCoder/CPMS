@@ -133,7 +133,16 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarProps) {
               <IconBox>
                 <item.icon className="h-5 w-5" />
               </IconBox>
-              {!collapsed && <span className={label}>{item.label}</span>}
+              {!collapsed && (
+                <>
+                  <span className={label}>{item.label}</span>
+                  {item.badge && (
+                    <span className="ml-auto shrink-0 rounded-full bg-sidebar-foreground/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                      {item.badge}
+                    </span>
+                  )}
+                </>
+              )}
             </NavLink>
           </MaybeTooltip>
         ))}

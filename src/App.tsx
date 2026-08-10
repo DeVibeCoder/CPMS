@@ -23,6 +23,7 @@ import UsersPage from "@/pages/UsersPage";
 import SettingsPage from "@/pages/SettingsPage";
 import ProfilePage from "@/pages/ProfilePage";
 import CementPage from "@/pages/inventory/CementPage";
+import AttendancePage from "@/pages/AttendancePage";
 import NotFoundPage from "@/pages/NotFoundPage";
 import { ReportsScope } from "@/components/report/ReportsScope";
 
@@ -121,6 +122,17 @@ export default function App() {
           <Route
             path="/inventory/cement"
             element={<Navigate to="/inventory" replace />}
+          />
+
+          {/* Attendance — under development, running on mock data and gated to
+              administrators. Nothing here touches the reports backend. */}
+          <Route
+            path="/attendance"
+            element={
+              <RequireCapability capability="attendance">
+                <AttendancePage />
+              </RequireCapability>
+            }
           />
 
           {/* Users, general settings & profile now live as tabs under /settings */}

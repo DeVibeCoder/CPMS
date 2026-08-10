@@ -4,6 +4,7 @@ import {
   BarChart3,
   Settings,
   Boxes,
+  CalendarClock,
   type LucideIcon,
 } from "lucide-react";
 import type { Capability } from "@/store/auth";
@@ -15,6 +16,8 @@ export interface NavItem {
   /** Capability required to see this item (undefined = everyone). */
   requires?: Capability;
   section?: string;
+  /** Short marker beside the label, e.g. a module still under development. */
+  badge?: string;
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -25,6 +28,16 @@ export const NAV_ITEMS: NavItem[] = [
   // is a tab bar across the top of the section — not a sidebar dropdown.
   { label: "Inventory", to: "/inventory", icon: Boxes, section: "Inventory" },
   { label: "Analytics", to: "/analytics", icon: BarChart3, section: "Reports" },
+  // Under development on mock data and administrator-only until the plant signs
+  // off the working-hour policy — hence both the capability and the badge.
+  {
+    label: "Attendance",
+    to: "/attendance",
+    icon: CalendarClock,
+    section: "Staff",
+    requires: "attendance",
+    badge: "DEV",
+  },
   // Users & Profile are grouped as tabs inside Settings. Everyone can open
   // Settings (viewers land on their Profile tab); admin-only tabs are gated
   // inside the settings hub.
