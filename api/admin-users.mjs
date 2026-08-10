@@ -102,12 +102,23 @@ export default async function handler(req, res) {
 
   // ---- Authenticate and authorise the caller ----
   const token = (req.headers.authorization ?? "").replace(/^Bearer\s+/i, "");
-  if (!token) return res.status(401).json({ error: "Not signed in." });
+  if (!token) {
+    return res.status(401).json({ error: "You are not signed in." });
+  }
 
+  // Distinguish "no credentials" from "credentials refused". They are different
+  // faults with different fixes — a signed-out browser versus an expired token
+  // or a deployment holding the wrong service key — and reporting both as the
+  // same sentence turns a two-minute diagnosis into a hunt.
   const { data: callerData, error: callerError } = await admin.auth.getUser(token);
   const caller = callerData?.user;
   if (callerError || !caller) {
-    return res.status(401).json({ error: "Not signed in." });
+    return res.status(401).json({
+      error:
+        "Your session was rejected. Sign out and back in; if it keeps happening, " +
+        "the deployment's Supabase keys may be wrong.",
+      reason: callerError?.message ?? "no user for that token",
+    });
   }
   if (!isActive(caller) || roleFromAccount(caller) !== "admin") {
     return res.status(403).json({ error: "Administrator access required." });

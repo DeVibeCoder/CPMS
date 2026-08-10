@@ -271,8 +271,19 @@ export class SupabaseRepository implements Repository {
    */
   private async invokeAdmin<T>(payload: Record<string, unknown>): Promise<T> {
     const { data } = await this.db.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) throw new Error("You are not signed in.");
+    let session = data.session;
+    if (!session) throw new Error("You are not signed in.");
+
+    // Send a token the server will still accept. A tab left open past the hour
+    // holds a session whose access token has expired, and the background
+    // refresh does not always have run by the time somebody clicks — the route
+    // then rejects a perfectly valid sign-in as "not signed in".
+    const expiresInMs = (session.expires_at ?? 0) * 1000 - Date.now();
+    if (expiresInMs < 60_000) {
+      const { data: refreshed } = await this.db.auth.refreshSession();
+      session = refreshed.session ?? session;
+    }
+    const token = session.access_token;
 
     let res: Response;
     try {
