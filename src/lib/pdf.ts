@@ -315,22 +315,29 @@ export function generateReportPdf(report: Report): jsPDF {
   // the block is left out entirely rather than printing three empty rows — the
   // archive keeps printing exactly as it always did.
   if (hasWeather(d.weather)) {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(...NAVY);
-    doc.text("Weather Condition:", MARGIN, cursorY + 6);
-
-    doc.setFontSize(8.3);
-    let y = cursorY + 19;
-    for (const band of WEATHER_BANDS) {
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(...TEXT);
-      doc.text(band.label, MARGIN + 8, y);
-      doc.setFont("helvetica", "bold");
-      doc.text(weatherLabel(d.weather?.[band.key]) || "—", MARGIN + 110, y);
-      y += 12;
-    }
-    cursorY = y;
+    // Half width and left-aligned: three short rows stretched across the page
+    // would read as a mistake next to the full-width stock tables above.
+    const weatherW = contentW * 0.52;
+    cursorY =
+      drawTable({
+        doc,
+        startY: cursorY,
+        x: MARGIN,
+        width: weatherW,
+        title: "WEATHER CONDITION",
+        subColor: SLATE,
+        columns: [
+          { header: "Period", width: weatherW * 0.55 },
+          { header: "Condition", width: weatherW * 0.45 },
+        ],
+        rows: WEATHER_BANDS.map((band) => [
+          band.label,
+          {
+            content: weatherLabel(d.weather?.[band.key]) || "-",
+            bold: true,
+          },
+        ]),
+      }) + GAP;
   }
 
   if (d.notes && d.notes.trim()) {

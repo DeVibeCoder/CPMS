@@ -316,22 +316,29 @@ export function ReportDocument({ report }: { report: Report }) {
       {/* Recorded from 10 August 2026. Older reports have none and print
           exactly as they always did rather than showing three empty rows. */}
       {hasWeather(d.weather) ? (
-        <div className="mt-4 text-[12px]">
-          <div className="font-bold" style={{ color: C.navy }}>
-            Weather Condition:
-          </div>
-          <div className="mt-1 space-y-0.5">
-            {WEATHER_BANDS.map((band) => (
-              <div key={band.key} className="flex gap-4">
-                <span className="w-32 shrink-0 text-slate-700">
-                  {band.label}
-                </span>
-                <span className="font-semibold text-slate-900">
-                  {weatherLabel(d.weather?.[band.key]) || "—"}
-                </span>
-              </div>
-            ))}
-          </div>
+        // Half width and left-aligned: three short rows stretched across the
+        // page would read as a mistake next to the full-width tables above.
+        <div className="mt-3 w-[52%]">
+          <DocTable>
+            <thead>
+              <TitleBar span={2}>Weather Condition</TitleBar>
+              <ColumnHeaders
+                color={C.slate}
+                cols={[
+                  { label: "Period", width: "55%" },
+                  { label: "Condition", width: "45%" },
+                ]}
+              />
+            </thead>
+            <tbody>
+              {WEATHER_BANDS.map((band) => (
+                <tr key={band.key}>
+                  <Cell>{band.label}</Cell>
+                  <Cell bold>{weatherLabel(d.weather?.[band.key]) || "-"}</Cell>
+                </tr>
+              ))}
+            </tbody>
+          </DocTable>
         </div>
       ) : null}
 
