@@ -127,6 +127,24 @@
     background: transparent;
   }
 
+  /*
+   * Scrolls, but shows no scrollbar. For strips that scroll sideways on a
+   * narrow screen and are obviously swipeable without one — a row of tabs.
+   *
+   * It also suppresses the vertical scrollbar such a strip gets for free:
+   * `overflow-x: auto` makes overflow-y compute to `auto` too, so a single
+   * pixel of vertical overflow — which a tab pulling its underline over the
+   * container's border with `-mb-px` produces by definition — is enough to
+   * put a scrollbar down the right-hand side.
+   */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
   .tabular-nums {
     font-variant-numeric: tabular-nums;
   }

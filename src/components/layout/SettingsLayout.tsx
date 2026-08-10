@@ -68,7 +68,7 @@ export function SettingsLayout() {
     <div>
       {/* Only show the tab bar when there's more than one section to switch. */}
       {tabs.length > 1 && (
-        <div className="mb-6 flex gap-1 overflow-x-auto border-b border-border scrollbar-thin">
+        <div className="mb-6 flex gap-1 overflow-x-auto border-b border-border scrollbar-none">
           {tabs.map((t) => (
             <NavLink
               key={t.to}
