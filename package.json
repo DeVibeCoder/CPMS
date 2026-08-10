@@ -13,7 +13,8 @@
     "appwrite:setup": "node appwrite/setup.mjs",
     "appwrite:bootstrap": "node appwrite/bootstrap-admin.mjs",
     "appwrite:seed": "node appwrite/seed-master-report.mjs",
-    "appwrite:keepalive": "node appwrite/keepalive.mjs"
+    "appwrite:keepalive": "node appwrite/keepalive.mjs",
+    "backup:appwrite": "node supabase/export-appwrite.mjs"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.1",

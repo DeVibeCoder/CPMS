@@ -13,6 +13,10 @@ dist-ssr
 # TS build cache
 *.tsbuildinfo
 
+# Database exports. Real plant reports and users' profile pictures — these are
+# backups, not source, and they belong off-machine rather than in the history.
+backups/
+
 # Appwrite CLI scratch / function build output
 appwrite/.appwrite
 appwrite/functions/*/node_modules
