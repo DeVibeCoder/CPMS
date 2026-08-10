@@ -82,17 +82,27 @@ export default function SettingsPage() {
   };
 
   const onExport = async () => {
-    const db = await repo.exportDatabase();
-    const blob = new Blob([JSON.stringify(db, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `cpsm-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast({ variant: "success", title: "Backup downloaded" });
+    try {
+      const db = await repo.exportDatabase();
+      const blob = new Blob([JSON.stringify(db, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `cpsm-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ variant: "success", title: "Backup downloaded" });
+    } catch (e) {
+      // A backup that fails silently is worse than one that fails loudly: the
+      // person walks away believing they have a copy of the plant's records.
+      toast({
+        variant: "destructive",
+        title: "Could not download the backup",
+        description: e instanceof Error ? e.message : undefined,
+      });
+    }
   };
 
   const onImport = (file?: File) => {
@@ -117,9 +127,20 @@ export default function SettingsPage() {
 
   const onReset = async () => {
     setResetting(true);
-    await repo.resetDatabase();
-    toast({ variant: "success", title: "Database reset", description: "Reloading…" });
-    setTimeout(() => window.location.reload(), 800);
+    try {
+      await repo.resetDatabase();
+      toast({ variant: "success", title: "Database reset", description: "Reloading…" });
+      setTimeout(() => window.location.reload(), 800);
+    } catch (e) {
+      // Half a reset is the dangerous outcome — say so rather than reloading
+      // into a database that is neither the old one nor empty.
+      toast({
+        variant: "destructive",
+        title: "Could not reset the database",
+        description: e instanceof Error ? e.message : undefined,
+      });
+      setResetting(false);
+    }
   };
 
   const themes: { key: ThemeMode; label: string }[] = [
