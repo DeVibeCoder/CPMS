@@ -57,6 +57,15 @@ interface TableOpts {
   rows: Cell[][];
   /** Optional per-row background fill (e.g. silo cream rows). */
   rowFill?: (rowIndex: number) => [number, number, number] | undefined;
+  /**
+   * Drop the column-header strip, leaving just the title bar.
+   *
+   * For a one-column block like Remarks there is nothing to label — an empty
+   * coloured strip above the text would read as a missing heading.
+   */
+  hideColumnHeaders?: boolean;
+  /** Floor on body row height, so a one-line entry still looks like a box. */
+  minBodyHeight?: number;
 }
 
 /** Draws one titled table and returns its bottom Y coordinate. */
@@ -83,6 +92,9 @@ function drawTable(opts: TableOpts): number {
       overflow: "linebreak",
     },
     columnStyles,
+    bodyStyles: opts.minBodyHeight
+      ? { minCellHeight: opts.minBodyHeight }
+      : undefined,
     head: [
       [
         {
@@ -97,15 +109,19 @@ function drawTable(opts: TableOpts): number {
           },
         },
       ],
-      columns.map((c) => ({
-        content: c.header,
-        styles: {
-          fillColor: opts.subColor,
-          textColor: [255, 255, 255],
-          fontStyle: "bold" as const,
-          halign: "left" as const,
-        },
-      })),
+      ...(opts.hideColumnHeaders
+        ? []
+        : [
+            columns.map((c) => ({
+              content: c.header,
+              styles: {
+                fillColor: opts.subColor,
+                textColor: [255, 255, 255] as [number, number, number],
+                fontStyle: "bold" as const,
+                halign: "left" as const,
+              },
+            })),
+          ]),
     ],
     body: opts.rows.map((r) => r.map(bodyCell)),
     didParseCell: (data) => {
@@ -340,15 +356,22 @@ export function generateReportPdf(report: Report): jsPDF {
       }) + GAP;
   }
 
+  // Full width under the weather block: remarks are prose, and prose in a
+  // half-width column on an A4 sheet wraps every few words.
   if (d.notes && d.notes.trim()) {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(...NAVY);
-    doc.text("Remarks:", MARGIN, cursorY + 6);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(...TEXT);
-    const lines = doc.splitTextToSize(d.notes, contentW);
-    doc.text(lines, MARGIN, cursorY + 19);
+    cursorY =
+      drawTable({
+        doc,
+        startY: cursorY,
+        x: MARGIN,
+        width: contentW,
+        title: "REMARKS",
+        subColor: SLATE,
+        hideColumnHeaders: true,
+        columns: [{ header: "", width: contentW }],
+        rows: [[d.notes.trim()]],
+        minBodyHeight: 34,
+      }) + GAP;
   }
 
   // ---------- Footer ----------

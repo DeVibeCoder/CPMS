@@ -342,12 +342,22 @@ export function ReportDocument({ report }: { report: Report }) {
         </div>
       ) : null}
 
+      {/* Full width under the weather block: remarks are prose, and prose in a
+          half-width column on an A4 sheet wraps every few words. */}
       {d.notes && d.notes.trim() ? (
-        <div className="mt-4 text-[12px]">
-          <span className="font-bold" style={{ color: C.navy }}>
-            Remarks:{" "}
-          </span>
-          <span className="whitespace-pre-wrap text-slate-700">{d.notes}</span>
+        <div className="mt-3">
+          <DocTable>
+            <thead>
+              <TitleBar span={1}>Remarks</TitleBar>
+            </thead>
+            <tbody>
+              <tr>
+                <Cell className="align-top whitespace-pre-wrap">
+                  <span className="block min-h-[34px]">{d.notes.trim()}</span>
+                </Cell>
+              </tr>
+            </tbody>
+          </DocTable>
         </div>
       ) : null}
 
