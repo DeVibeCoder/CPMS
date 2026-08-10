@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import {
   ArrowLeft,
   Boxes,
+  Check,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
@@ -479,33 +480,45 @@ export default function CreateReportPage() {
 
   const sec7 = (
     <SectionCard icon={CloudSun} index={7} title="Weather">
-      <div className="space-y-4">
+      <div className="space-y-2">
         {WEATHER_BANDS.map((band) => (
-          <div key={band.key} className="space-y-1.5">
-            <Label>{band.label}</Label>
+          <div
+            key={band.key}
+            className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border border-border px-3 py-2.5"
+          >
+            <span className="text-sm font-medium">{band.label}</span>
             <div className="flex flex-wrap gap-1.5">
               {WEATHER_OPTIONS.map((option) => {
                 const selected = data.weather?.[band.key] === option.value;
                 return (
-                  <Button
+                  <button
                     key={option.value}
                     type="button"
-                    variant={selected ? "default" : "outline"}
-                    size="sm"
+                    aria-pressed={selected}
                     onClick={() =>
                       setData((d) => ({
                         ...d,
                         weather: {
                           ...d.weather,
-                          // Tapping the chosen one again clears it, so a
+                          // Pressing the chosen one again clears it, so a
                           // mis-tap does not force a wrong answer.
                           [band.key]: selected ? undefined : option.value,
                         },
                       }))
                     }
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                      selected
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-input bg-background hover:bg-accent hover:text-accent-foreground",
+                    )}
                   >
+                    {/* The tick is what reads as "chosen" at a glance on a
+                        tablet in a plant, more so than colour alone. */}
+                    {selected && <Check className="h-3.5 w-3.5" />}
                     {option.label}
-                  </Button>
+                  </button>
                 );
               })}
             </div>

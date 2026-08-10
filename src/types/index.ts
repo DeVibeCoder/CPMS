@@ -118,9 +118,9 @@ export type WeatherCondition = "rainy" | "sunny" | "windy";
 
 /** The three bands the plant records weather against. Order is print order. */
 export const WEATHER_BANDS = [
-  { key: "morning", label: "6am - 12 noon" },
-  { key: "afternoon", label: "12 noon - 6pm" },
-  { key: "evening", label: "6pm - 12 midnight" },
+  { key: "morning", label: "06 AM - 12 PM" },
+  { key: "afternoon", label: "12 PM - 06 PM" },
+  { key: "evening", label: "06 PM - 12 AM" },
 ] as const;
 
 export type WeatherBand = (typeof WEATHER_BANDS)[number]["key"];

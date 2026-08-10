@@ -312,24 +312,25 @@ export function generateReportPdf(report: Report): jsPDF {
 
   // ---------- Weather ----------
   // Recorded from 10 August 2026 onwards. Every report before that has none, so
-  // the section is left out entirely rather than printing three empty boxes —
-  // the archive keeps printing exactly as it always did.
+  // the block is left out entirely rather than printing three empty rows — the
+  // archive keeps printing exactly as it always did.
   if (hasWeather(d.weather)) {
-    const wCol = contentW / WEATHER_BANDS.length;
-    cursorY =
-      drawTable({
-        doc,
-        startY: cursorY,
-        x: MARGIN,
-        width: contentW,
-        title: "WEATHER CONDITIONS",
-        subColor: BLUE,
-        columns: WEATHER_BANDS.map((band) => ({
-          header: band.label,
-          width: wCol,
-        })),
-        rows: [WEATHER_BANDS.map((band) => weatherLabel(d.weather?.[band.key]))],
-      }) + GAP;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(...NAVY);
+    doc.text("Weather Condition:", MARGIN, cursorY + 6);
+
+    doc.setFontSize(8.3);
+    let y = cursorY + 19;
+    for (const band of WEATHER_BANDS) {
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(...TEXT);
+      doc.text(band.label, MARGIN + 8, y);
+      doc.setFont("helvetica", "bold");
+      doc.text(weatherLabel(d.weather?.[band.key]) || "—", MARGIN + 110, y);
+      y += 12;
+    }
+    cursorY = y;
   }
 
   if (d.notes && d.notes.trim()) {

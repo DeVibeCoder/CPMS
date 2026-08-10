@@ -314,40 +314,24 @@ export function ReportDocument({ report }: { report: Report }) {
       </div>
 
       {/* Recorded from 10 August 2026. Older reports have none and print
-          exactly as they always did rather than showing three empty boxes. */}
+          exactly as they always did rather than showing three empty rows. */}
       {hasWeather(d.weather) ? (
-        <div className="mt-3">
-          <DocTable>
-            <thead>
-              <tr>
-                <th
-                  colSpan={WEATHER_BANDS.length}
-                  className="px-2 py-1 text-center text-[11px] font-bold text-white"
-                  style={{ backgroundColor: C.navy }}
-                >
-                  WEATHER CONDITIONS
-                </th>
-              </tr>
-              <tr>
-                {WEATHER_BANDS.map((band) => (
-                  <th
-                    key={band.key}
-                    className="px-2 py-1 text-left text-[11px] font-bold text-white"
-                    style={{ backgroundColor: C.blue }}
-                  >
-                    {band.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                {WEATHER_BANDS.map((band) => (
-                  <Cell key={band.key}>{weatherLabel(d.weather?.[band.key])}</Cell>
-                ))}
-              </tr>
-            </tbody>
-          </DocTable>
+        <div className="mt-4 text-[12px]">
+          <div className="font-bold" style={{ color: C.navy }}>
+            Weather Condition:
+          </div>
+          <div className="mt-1 space-y-0.5">
+            {WEATHER_BANDS.map((band) => (
+              <div key={band.key} className="flex gap-4">
+                <span className="w-32 shrink-0 text-slate-700">
+                  {band.label}
+                </span>
+                <span className="font-semibold text-slate-900">
+                  {weatherLabel(d.weather?.[band.key]) || "—"}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       ) : null}
 
