@@ -113,6 +113,28 @@ export interface NetSlings {
   used: SlingRow;
 }
 
+/** The conditions recorded against each part of the working day. */
+export type WeatherCondition = "rainy" | "sunny" | "windy";
+
+/** The three bands the plant records weather against. Order is print order. */
+export const WEATHER_BANDS = [
+  { key: "morning", label: "6am - 12 noon" },
+  { key: "afternoon", label: "12 noon - 6pm" },
+  { key: "evening", label: "6pm - 12 midnight" },
+] as const;
+
+export type WeatherBand = (typeof WEATHER_BANDS)[number]["key"];
+
+/**
+ * Weather across the working day, one condition per band.
+ *
+ * Every band is optional, and so is the whole object: reports filed before this
+ * existed (everything up to 9 August 2026) simply have none, and print exactly
+ * as they always did rather than growing an empty section. Finalising a report
+ * requires all three — see `missingWeatherBands`.
+ */
+export type Weather = Partial<Record<WeatherBand, WeatherCondition>>;
+
 export interface ReportData {
   bags50kg: Bags50kgStock;
   jumbo: JumboStock;
@@ -120,7 +142,11 @@ export interface ReportData {
   emptyBags50kg: EmptyBags50kg;
   emptyJumbo: EmptyJumboBags;
   netSlings: NetSlings;
-  /** Weight of one 50kg bag in MT for the jumbo/tonnage conversion. */
+  /**
+   * Recorded from 10 August 2026 onwards. Absent on everything before it.
+   */
+  weather?: Weather;
+  /** Free text printed under the tables as "Remarks". */
   notes?: string;
 }
 

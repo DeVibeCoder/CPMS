@@ -2,8 +2,9 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { Styles } from "jspdf-autotable";
 import { format, parseISO } from "date-fns";
-import type { Report } from "@/types";
+import { WEATHER_BANDS, type Report } from "@/types";
 import { computeTotals } from "@/lib/calculations";
+import { hasWeather, weatherLabel } from "@/lib/weather";
 import { PDF_FOOTER, REPORT_TITLE } from "@/config/brand";
 import { formatNumber } from "@/lib/utils";
 
@@ -308,6 +309,28 @@ export function generateReportPdf(report: Report): jsPDF {
         ],
       ],
     }) + GAP;
+
+  // ---------- Weather ----------
+  // Recorded from 10 August 2026 onwards. Every report before that has none, so
+  // the section is left out entirely rather than printing three empty boxes —
+  // the archive keeps printing exactly as it always did.
+  if (hasWeather(d.weather)) {
+    const wCol = contentW / WEATHER_BANDS.length;
+    cursorY =
+      drawTable({
+        doc,
+        startY: cursorY,
+        x: MARGIN,
+        width: contentW,
+        title: "WEATHER CONDITIONS",
+        subColor: BLUE,
+        columns: WEATHER_BANDS.map((band) => ({
+          header: band.label,
+          width: wCol,
+        })),
+        rows: [WEATHER_BANDS.map((band) => weatherLabel(d.weather?.[band.key]))],
+      }) + GAP;
+  }
 
   if (d.notes && d.notes.trim()) {
     doc.setFont("helvetica", "bold");

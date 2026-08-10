@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  CloudSun,
   Layers,
   Loader2,
   PackageOpen,
@@ -24,8 +25,9 @@ import { Badge } from "@/components/ui/badge";
 import { NumberField } from "@/components/report/NumberField";
 import { computeTotals, emptyReportData } from "@/lib/calculations";
 import { LOCKED_MESSAGE, isLocked } from "@/lib/reportStatus";
+import { WEATHER_OPTIONS, missingWeatherBands } from "@/lib/weather";
 import { cn, formatNumber } from "@/lib/utils";
-import type { ReportData, ReportStatus } from "@/types";
+import { WEATHER_BANDS, type ReportData, type ReportStatus } from "@/types";
 import { repo } from "@/data";
 import { useAuth } from "@/store/auth";
 import { toast } from "@/hooks/use-toast";
@@ -178,6 +180,22 @@ export default function CreateReportPage() {
 
   const onSave = async () => {
     if (!user) return;
+
+    // A finalised report is the plant's record of the day, so the weather has
+    // to be on it. A draft is work in progress — a clerk filling this in at
+    // lunchtime cannot know the evening's weather, and refusing the save would
+    // throw away the morning's figures to enforce a field they cannot answer.
+    const missing = status === "final" ? missingWeatherBands(data.weather) : [];
+    if (missing.length > 0) {
+      toast({
+        variant: "destructive",
+        title: "Weather is needed to finalise this report",
+        description: `Still to record: ${missing.map((b) => b.label).join(", ")}. Save it as a draft instead if you cannot answer yet.`,
+      });
+      setStep(sections.findIndex((s) => s.title === "Weather"));
+      return;
+    }
+
     setSaving(true);
     try {
       if (isEdit && id) {
@@ -460,7 +478,49 @@ export default function CreateReportPage() {
   );
 
   const sec7 = (
-    <SectionCard icon={ClipboardList} index={7} title="Remarks (optional)">
+    <SectionCard icon={CloudSun} index={7} title="Weather">
+      <div className="space-y-4">
+        {WEATHER_BANDS.map((band) => (
+          <div key={band.key} className="space-y-1.5">
+            <Label>{band.label}</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {WEATHER_OPTIONS.map((option) => {
+                const selected = data.weather?.[band.key] === option.value;
+                return (
+                  <Button
+                    key={option.value}
+                    type="button"
+                    variant={selected ? "default" : "outline"}
+                    size="sm"
+                    onClick={() =>
+                      setData((d) => ({
+                        ...d,
+                        weather: {
+                          ...d.weather,
+                          // Tapping the chosen one again clears it, so a
+                          // mis-tap does not force a wrong answer.
+                          [band.key]: selected ? undefined : option.value,
+                        },
+                      }))
+                    }
+                  >
+                    {option.label}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        <p className="text-xs text-muted-foreground">
+          All three are needed to mark a report final. A draft can be saved
+          without them.
+        </p>
+      </div>
+    </SectionCard>
+  );
+
+  const sec8 = (
+    <SectionCard icon={ClipboardList} index={8} title="Remarks (optional)">
       <Textarea
         placeholder="Any notes for this report…"
         value={data.notes ?? ""}
@@ -477,7 +537,8 @@ export default function CreateReportPage() {
     { title: "50KG Empty Bags Stock", node: sec4 },
     { title: "Empty Jumbo Bags", node: sec5 },
     { title: "Net Slings", node: sec6 },
-    { title: "Remarks", node: sec7 },
+    { title: "Weather", node: sec7 },
+    { title: "Remarks", node: sec8 },
   ];
   const activeStep = Math.min(step, sections.length - 1);
 

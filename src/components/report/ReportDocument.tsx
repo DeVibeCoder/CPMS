@@ -1,6 +1,7 @@
 import { format, parseISO } from "date-fns";
-import type { Report } from "@/types";
+import { WEATHER_BANDS, type Report } from "@/types";
 import { computeTotals } from "@/lib/calculations";
+import { hasWeather, weatherLabel } from "@/lib/weather";
 import { PDF_FOOTER, REPORT_TITLE } from "@/config/brand";
 import { formatNumber } from "@/lib/utils";
 
@@ -311,6 +312,44 @@ export function ReportDocument({ report }: { report: Report }) {
           </tbody>
         </DocTable>
       </div>
+
+      {/* Recorded from 10 August 2026. Older reports have none and print
+          exactly as they always did rather than showing three empty boxes. */}
+      {hasWeather(d.weather) ? (
+        <div className="mt-3">
+          <DocTable>
+            <thead>
+              <tr>
+                <th
+                  colSpan={WEATHER_BANDS.length}
+                  className="px-2 py-1 text-center text-[11px] font-bold text-white"
+                  style={{ backgroundColor: C.navy }}
+                >
+                  WEATHER CONDITIONS
+                </th>
+              </tr>
+              <tr>
+                {WEATHER_BANDS.map((band) => (
+                  <th
+                    key={band.key}
+                    className="px-2 py-1 text-left text-[11px] font-bold text-white"
+                    style={{ backgroundColor: C.blue }}
+                  >
+                    {band.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                {WEATHER_BANDS.map((band) => (
+                  <Cell key={band.key}>{weatherLabel(d.weather?.[band.key])}</Cell>
+                ))}
+              </tr>
+            </tbody>
+          </DocTable>
+        </div>
+      ) : null}
 
       {d.notes && d.notes.trim() ? (
         <div className="mt-4 text-[12px]">

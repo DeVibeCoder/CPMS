@@ -1,5 +1,11 @@
-import type { Report, ReportData, ReportStatus } from "@/types";
+import {
+  WEATHER_BANDS,
+  type Report,
+  type ReportData,
+  type ReportStatus,
+} from "@/types";
 import { emptyReportData } from "@/lib/calculations";
+import { WEATHER_OPTIONS, weatherLabel } from "@/lib/weather";
 
 /**
  * Bulk import / export of stock reports as CSV.
@@ -160,6 +166,21 @@ const COLUMNS: Column[] = [
     get: (d) => d.netSlings.used.gStore,
     set: (d, v) => (d.netSlings.used.gStore = num(v)),
   },
+  // Weather — one column per band, so a spreadsheet can be sorted by it.
+  // Unrecognised text is ignored rather than stored: the printed sheet has to
+  // read as one of the three conditions, not whatever was typed into Excel.
+  ...WEATHER_BANDS.map(
+    (band): Column => ({
+      header: `Weather ${band.label}`,
+      get: (d) => weatherLabel(d.weather?.[band.key]),
+      set: (d, v) => {
+        const match = WEATHER_OPTIONS.find(
+          (o) => o.label.toLowerCase() === v.trim().toLowerCase(),
+        );
+        if (match) d.weather = { ...d.weather, [band.key]: match.value };
+      },
+    }),
+  ),
   {
     header: "Remarks",
     get: (d) => d.notes ?? "",
