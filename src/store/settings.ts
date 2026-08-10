@@ -21,7 +21,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
       set({ settings: s });
       return s;
     } catch {
-      // On Appwrite the settings table is only readable once signed in, so a
+      // The settings row is only readable once signed in, so a
       // pre-login read is expected to fail. Fall back rather than block boot,
       // and leave `settings` null so it is fetched again after login.
       return { ...DEFAULT_SETTINGS };

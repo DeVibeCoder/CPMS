@@ -11,27 +11,31 @@ component layer. Dark-blue industrial theme with full light/dark mode.
 
 ## Quick start
 
-CPSM requires an Appwrite backend — there is no offline mode and no demo data.
-Set one up once by following [`appwrite/README.md`](appwrite/README.md):
+CPSM requires a Supabase backend — there is no offline mode and no demo data.
 
 ```bash
 npm install
-cp .env.example .env.local          # endpoint, project id, API key
-npm run appwrite:setup              # database, tables, permissions
-npm run appwrite:bootstrap -- you@example.com "a-good-password" "Your Name"
+cp .env.example .env.local          # project URL + publishable key
+npm run db:migrate                  # tables, row-level security, grants
 npm run dev                         # http://localhost:5173
 ```
+
+`db:migrate` applies `supabase/migrations/` through the Supabase Management API
+and needs `SUPABASE_ACCESS_TOKEN` in `.env.local`. It records what it has
+applied in `supabase_migrations.schema_migrations` — the same table the Supabase
+CLI uses — so it never runs a migration twice.
 
 Other scripts:
 
 ```bash
-npm run build      # type-check + production build to /dist
-npm run preview    # preview the production build
-npm run typecheck  # type-check only
-npm run appwrite:seed   # optional 12/07/2026 reference report
+npm run build            # type-check + production build to /dist
+npm run preview          # preview the production build
+npm run typecheck        # type-check only
+npm run test:admin       # exercise api/admin-users against the project
+npm run test:attendance  # attendance calculations + sample data
 ```
 
-Without `VITE_APPWRITE_ENDPOINT` and `VITE_APPWRITE_PROJECT_ID` the app shows a
+Without `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` the app shows a
 "Backend not configured" screen rather than starting. Vite inlines those at
 build time, so changing them needs a rebuild, not just a restart.
 
@@ -43,13 +47,14 @@ build time, so changing them needs a rebuild, not just a restart.
 | Dispatch | View, create/edit reports, generate PDF & print. No users/settings/delete |
 | Viewer   | Read-only — view reports, dashboards & analytics                         |
 
-There are no default accounts. The first admin is created by
-`npm run appwrite:bootstrap`; everyone else is created through Settings → Users.
+There are no default accounts. Users are created through Settings → Users,
+which calls `api/admin-users` — the only place the service key is used.
 
 Roles are enforced twice — through the capability map in `src/store/auth.ts`,
-which decides what the UI shows, and through Appwrite's table permissions, which
-decide what is actually allowed. A role is an Appwrite account *label*, so it
-cannot be changed from the browser.
+which decides what the UI shows, and through row-level security in
+`supabase/migrations/`, which decides what is actually allowed. A role is a
+claim in the account's `app_metadata`, writable only by the service key, so a
+user with rights over their own profile row still cannot promote themselves.
 
 ---
 
@@ -81,7 +86,7 @@ cannot be changed from the browser.
 The app talks to data **only** through the `Repository` interface
 (`src/data/repository.ts`) — every method is `async`.
 
-`src/data/appwriteRepository.ts` implements it against Appwrite Auth + TablesDB
+`src/data/supabaseRepository.ts` implements it against Supabase Auth + Postgres
 and is the only implementation — no page or component imports it directly, so
 swapping backends means writing one class and changing one export in
 `src/data/index.ts`.
@@ -95,12 +100,13 @@ src/
     report/      report document + numeric field
     common/      logo, page header, theme toggle, confirm dialog
     auth/        route guards
-  data/          repository interface + Appwrite implementation
-  lib/           appwrite client, calculations, analytics, pdf, utils
+  data/          repository interface + Supabase implementation
+  lib/           supabase client, calculations, analytics, pdf, utils
   pages/         one file per route
   store/         zustand stores (auth, theme, settings)
   types/         domain model
-appwrite/        schema setup, bootstrap & seed scripts, admin-users function
+supabase/        SQL migrations + migration/verification scripts
+api/             serverless routes: admin-users, keepalive
 ```
 
 ### Report domain model
@@ -127,7 +133,7 @@ reproduce the plant's **master report layout 1:1**:
 
 All palette and geometry constants are centralised at the top of
 `src/lib/pdf.ts` (`NAVY`, `SLATE`, `BLUE`, `CREAM`, `MARGIN`, `GAP`, column
-width factors). `npm run appwrite:seed` inserts the sample report (12/07/2026)
+width factors). The sample report (12/07/2026)
 with the exact source figures, so you can open it and compare the output side by
 side with the original — the row/column values match.
 
@@ -135,58 +141,28 @@ side with the original — the row/column values match.
 
 ## Production checklist
 
-- Set `VITE_APPWRITE_ENDPOINT` / `VITE_APPWRITE_PROJECT_ID` in your host's
-  environment, before the build — Vite inlines them at build time.
-- Deploy the `admin-users` function — without it, user management fails.
-- Register the deployed origin as a Web platform in the Appwrite console.
-- Restrict signup so accounts are only ever created through the app.
-
-All four are covered step by step in [`appwrite/README.md`](appwrite/README.md).
+- Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in your host's
+  environment. Both are public and ship in the bundle; row-level security is
+  what protects the data.
+- Set `SUPABASE_SERVICE_ROLE_KEY` and `CRON_SECRET` **without** a `VITE_`
+  prefix. Vite inlines every `VITE_` variable into the browser bundle, and
+  these two bypass every policy — that prefix is the whole security boundary.
+- Turn off "Allow new users to sign up" in the Supabase dashboard. The policies
+  grant read to a *role*, never merely to "signed in", but there is no reason to
+  let an unprovisioned account exist at all.
 
 ---
 
-## Keeping the Appwrite Free plan project alive
+## Keeping the free-plan project alive
 
-Since 20 February 2026, Appwrite pauses Free plan projects after **7 consecutive
-days without development activity in the Appwrite Console**. Appwrite have said
-explicitly that runtime traffic does not count:
+Supabase pauses free projects after 7 days without activity, and counts ordinary
+API requests as activity — so daily use by the plant keeps it awake by itself.
 
-> Runtime traffic such as API calls, SDK usage, or end-user visits does not
-> count toward this.
+The gap is shutdowns. `api/keepalive.mjs` runs daily from a Vercel cron and
+reads one row, which covers holidays and quiet weeks. It refuses to run without
+`CRON_SECRET`, so it can never be triggered by a stranger, and it answers non-2xx
+on failure so a keepalive that has stopped working shows in the Vercel dashboard
+rather than surfacing as a locked-out user.
 
-So the plant signing in every day does **not** keep the backend alive. This
-project has already been paused once for exactly this reason, which took the app
-down until it was restored by hand in the console.
-
-**The automatic mitigation.** `api/keepalive.mjs` runs daily from a Vercel cron
-and performs a real schema write (create a scratch table, delete it again) —
-the same control-plane endpoint the Console uses when you add a collection.
-It needs two environment variables on Vercel, in addition to the two the build
-already uses:
-
-| Variable          | Value                                                        |
-| ----------------- | ------------------------------------------------------------ |
-| `APPWRITE_API_KEY`| The existing server key (Databases scope is enough)           |
-| `CRON_SECRET`     | Any long random string — Vercel sends it back as the bearer token |
-
-Without `CRON_SECRET` the route refuses to run, so it can never be triggered by
-a stranger. Run it by hand any time with `npm run appwrite:keepalive`.
-
-**Do not trust it blindly.** Appwrite does not document what counts as
-development activity, and users report that merely *opening* the console is not
-enough. The cron targets the most plausible signal; it is not a guarantee. Two
-things exist because of that:
-
-- A failed run answers non-2xx, so Vercel marks the cron invocation as failed
-  and it shows in the dashboard rather than failing silently.
-- Sign-in now says "the Appwrite project may be paused" instead of "invalid
-  email or password" when the backend is unreachable — see
-  `backendUnavailableMessage` in [`src/data/appwriteRepository.ts`](src/data/appwriteRepository.ts).
-
-**The manual fallback that definitely works.** Open the console once a week and
-make a small real change — rename a table, edit a permission, redeploy the
-function. If the app ever shows the "project may be paused" message, restore it
-at <https://cloud.appwrite.io/console>; the data is not deleted by a pause.
-
-The only guaranteed fix is a paid plan — Appwrite state that the Free plan is
-for development and learning, not production apps needing uptime.
+If the project ever does pause, the data is not deleted — restore it from
+<https://supabase.com/dashboard>.

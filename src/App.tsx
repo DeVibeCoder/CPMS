@@ -39,7 +39,7 @@ function BootScreen() {
 }
 
 /**
- * Shown when the build carries no Appwrite configuration. Vite inlines env
+ * Shown when the build carries no Supabase configuration. Vite inlines env
  * vars at build time, so a missing variable cannot be fixed at run time — it
  * needs new values and a rebuild. Saying so plainly beats an empty dashboard
  * that looks like a database with no data in it.
@@ -52,7 +52,7 @@ function NotConfiguredScreen() {
         <h1 className="text-lg font-semibold">Backend not configured</h1>
         <p className="text-sm text-muted-foreground">{BACKEND_NOT_CONFIGURED}</p>
         <p className="text-xs text-muted-foreground">
-          See <code>appwrite/README.md</code> for the full setup.
+          See <code>README.md</code> for the full setup.
         </p>
       </div>
     </div>

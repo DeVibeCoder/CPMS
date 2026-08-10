@@ -14,7 +14,7 @@ export const TABLE_SHIPMENTS = "shipments";
 /** The settings table holds exactly one row, under a fixed id. */
 export const SETTINGS_ROW_ID = "app";
 
-/** The privileged route that replaces Appwrite's admin-users function. */
+/** The privileged route for user management. Runs on the service key. */
 export const ADMIN_ENDPOINT = "/api/admin-users";
 
 const REMEMBER_KEY = "cpsm.auth.remember";
@@ -23,11 +23,9 @@ const REMEMBER_KEY = "cpsm.auth.remember";
  * Where the session is kept: localStorage when "remember me" is ticked,
  * sessionStorage when it is not.
  *
- * Appwrite had no per-session lifetime, so the old client emulated one with a
- * marker and signed the user out on the *next* startup if the tab that created
- * the session had closed. Here the browser does the work: a session written to
- * sessionStorage is gone the moment the tab closes, which is what "don't
- * remember me" actually means. Nothing to reconcile on boot.
+ * The browser does the work: a session written to sessionStorage is gone the
+ * moment the tab closes, which is what "don't remember me" actually means, so
+ * there is nothing to reconcile on boot.
  *
  * Reads check sessionStorage first so a non-remembered session always wins over
  * a stale remembered one, and writes clear the other store so exactly one copy

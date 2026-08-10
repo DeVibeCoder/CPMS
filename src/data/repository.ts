@@ -13,7 +13,7 @@ import type {
  * Repository contract.
  *
  * The whole app talks to data *only* through this async interface, which
- * `AppwriteRepository` implements against Appwrite Auth + TablesDB. No page or
+ * `SupabaseRepository` implements against Supabase Auth + Postgres. No page or
  * component imports the implementation; they all go through `src/data`.
  *
  * The interface stays deliberately backend-agnostic — swapping stores means

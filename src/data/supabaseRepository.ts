@@ -37,7 +37,7 @@ import {
 // Columns are snake_case; the domain types are camelCase. The mapping lives in
 // this file and nowhere else, which is what lets src/types stay unchanged.
 //
-// As in the Appwrite schema, the profile row holds no privileged field. The role
+// The profile row deliberately holds no privileged field. The role
 // lives in the account's app_metadata and "active" is the account's own banned
 // state, neither of which a client can write — so a user may edit their own
 // profile row freely without being able to promote themselves.
@@ -374,7 +374,7 @@ export class SupabaseRepository implements Repository {
    * Restore the signed-in user, if any.
    *
    * `getSession` reads the persisted session and refreshes it when needed, so
-   * unlike Appwrite there is nothing to probe for and no 401 to avoid: a browser
+   * there is nothing to probe for and no 401 to avoid: a browser
    * that was never signed in simply has no stored session and this returns null
    * without a request.
    */
@@ -743,10 +743,9 @@ export class SupabaseRepository implements Repository {
       .not("date", "is", null);
     if (shipments) fail("Could not clear shipments.", shipments);
 
-    // Matches the Appwrite behaviour exactly, including what it leaves alone:
-    // DEFAULT_SETTINGS carries only the theme, and undefined fields are dropped,
-    // so the cement opening balance survives a reset. Changing that here would
-    // be a silent behaviour change smuggled in with a backend swap.
+    // DEFAULT_SETTINGS carries only the theme, and undefined fields are
+    // dropped, so the cement opening balance deliberately survives a reset —
+    // it is the bin-card anchor, not report data.
     await this.updateSettings({ ...DEFAULT_SETTINGS });
   }
 }

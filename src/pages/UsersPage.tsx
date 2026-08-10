@@ -44,7 +44,7 @@ function RoleIcon({ role, className }: { role: Role; className?: string }) {
   return <UserCog className={className} />;
 }
 
-/** Appwrite Auth's own floor is 8; the admin-users function enforces the same. */
+/** Supabase Auth's own floor is 6; api/admin-users enforces 8. */
 const MIN_PASSWORD = 8;
 
 const AVATAR_COLORS = [

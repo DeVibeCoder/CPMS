@@ -12,10 +12,8 @@
 // header. The token is verified against Supabase rather than trusted, so it
 // cannot be forged the way a plain user-id header could.
 //
-// This replaces the Appwrite function in appwrite/functions/admin-users, and
-// keeps its behaviour: the same actions, the same guards, and the same rule that
-// an account whose profile row fails to create is deleted rather than left
-// unable to sign in.
+// An account whose profile row fails to create is deleted rather than left
+// behind unable to sign in.
 // =============================================================================
 import { createClient } from "@supabase/supabase-js";
 
@@ -289,8 +287,8 @@ export default async function handler(req, res) {
         if (body.id === caller.id) {
           return res.status(400).json({ error: "You cannot delete your own account." });
         }
-        // The profile row would cascade with the account, but deleting it first
-        // keeps the ordering identical to the Appwrite function it replaces.
+        // The profile row would cascade with the account anyway; removing it
+        // first keeps the order explicit.
         await admin.from(TABLE_PROFILES).delete().eq("id", body.id);
         const { error } = await admin.auth.admin.deleteUser(body.id);
         if (error) throw error;
