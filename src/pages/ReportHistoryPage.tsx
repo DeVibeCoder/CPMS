@@ -67,12 +67,12 @@ import { cn } from "@/lib/utils";
 import { downloadReportPdf, printReportPdf } from "@/lib/pdf";
 import { isLocked } from "@/lib/reportStatus";
 import {
-  downloadText,
   parseReportsCsv,
   reportsToCsv,
   templateCsv,
   type ParsedRow,
 } from "@/lib/reportCsv";
+import { downloadText } from "@/lib/csv";
 import { formatNumber } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 

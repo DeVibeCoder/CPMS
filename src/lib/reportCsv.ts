@@ -6,6 +6,7 @@ import {
 } from "@/types";
 import { emptyReportData } from "@/lib/calculations";
 import { WEATHER_OPTIONS, weatherLabel } from "@/lib/weather";
+import { readCsv, toCsvFile, toLine } from "@/lib/csv";
 
 /**
  * Bulk import / export of stock reports as CSV.
@@ -32,6 +33,15 @@ const num = (value: string): number => {
   const n = Number(String(value).replace(/,/g, "").trim());
   return Number.isFinite(n) ? n : 0;
 };
+
+/**
+ * A machine that writes semicolon-delimited CSV writes 1,5 for one and a half.
+ * `num` strips commas as thousands separators, which would read that as 15 — so
+ * the decimal comma has to become a point before it gets there. Only a bare
+ * number is touched, leaving Remarks and the weather columns as typed.
+ */
+const decimalise = (value: string, delimiter: string): string =>
+  delimiter !== "," && /^-?\d+,\d+$/.test(value) ? value.replace(",", ".") : value;
 
 /**
  * Every editable field on the report, in report order.
@@ -198,16 +208,6 @@ export const CSV_HEADERS = [DATE_HEADER, STATUS_HEADER, ...COLUMNS.map((c) => c.
 // Writing
 // -----------------------------------------------------------------------------
 
-/** Quote a field only when it needs it, so the file stays readable. */
-function escape(value: string | number): string {
-  const s = String(value ?? "");
-  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-function toLine(cells: Array<string | number>): string {
-  return cells.map(escape).join(",");
-}
-
 export function reportsToCsv(reports: Report[]): string {
   const rows = reports
     .slice()
@@ -215,8 +215,7 @@ export function reportsToCsv(reports: Report[]): string {
     .map((r) =>
       toLine([r.date, r.status, ...COLUMNS.map((c) => c.get(r.data))]),
     );
-  // A BOM makes Excel open UTF-8 correctly instead of mangling the em dash.
-  return "﻿" + [toLine(CSV_HEADERS), ...rows].join("\r\n") + "\r\n";
+  return toCsvFile([toLine(CSV_HEADERS), ...rows]);
 }
 
 /**
@@ -230,72 +229,16 @@ export function templateCsv(): string {
   const blank = emptyReportData();
   const example = (date: string, status: ReportStatus) =>
     toLine([date, status, ...COLUMNS.map((c) => c.get(blank))]);
-  return (
-    "﻿" +
-    [
-      toLine(CSV_HEADERS),
-      example("2026-07-01", "final"),
-      example("2026-07-02", "final"),
-    ].join("\r\n") +
-    "\r\n"
-  );
+  return toCsvFile([
+    toLine(CSV_HEADERS),
+    example("2026-07-01", "final"),
+    example("2026-07-02", "final"),
+  ]);
 }
 
 // -----------------------------------------------------------------------------
 // Reading
 // -----------------------------------------------------------------------------
-
-/**
- * Split one CSV line, honouring quoted fields and escaped quotes.
- *
- * Hand-rolled rather than pulled from a library: this is the only CSV the app
- * reads, and a dependency for thirty lines would be the larger cost.
- */
-function splitLine(line: string): string[] {
-  const out: string[] = [];
-  let field = "";
-  let quoted = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (quoted) {
-      if (ch === '"') {
-        if (line[i + 1] === '"') {
-          field += '"';
-          i++;
-        } else quoted = false;
-      } else field += ch;
-    } else if (ch === '"') {
-      quoted = true;
-    } else if (ch === ",") {
-      out.push(field);
-      field = "";
-    } else field += ch;
-  }
-  out.push(field);
-  return out;
-}
-
-/** Split a file into logical lines, ignoring newlines inside quoted fields. */
-function splitLines(text: string): string[] {
-  const lines: string[] = [];
-  let current = "";
-  let quoted = false;
-
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === '"') {
-      quoted = !quoted;
-      current += ch;
-    } else if (!quoted && (ch === "\n" || ch === "\r")) {
-      if (ch === "\r" && text[i + 1] === "\n") i++;
-      lines.push(current);
-      current = "";
-    } else current += ch;
-  }
-  if (current.length > 0) lines.push(current);
-  return lines.filter((l) => l.trim().length > 0);
-}
 
 export interface ParsedRow {
   date: string;
@@ -457,12 +400,8 @@ const ORIENTATION_LABEL: Record<Orientation, string> = {
  * needs the whole list of bad rows, not just the earliest.
  */
 export function parseReportsCsv(text: string): ParseResult {
-  const lines = splitLines(text.replace(/^﻿/, ""));
+  const { lines, delimiter, split, indexOf } = readCsv(text);
   if (lines.length === 0) return { rows: [], errors: ["The file is empty."] };
-
-  const headers = splitLine(lines[0]).map((h) => h.trim());
-  const indexOf = (name: string) =>
-    headers.findIndex((h) => h.toLowerCase() === name.toLowerCase());
 
   const dateIdx = indexOf(DATE_HEADER);
   const statusIdx = indexOf(STATUS_HEADER);
@@ -480,7 +419,7 @@ export function parseReportsCsv(text: string): ParseResult {
   // Pass one: split every line and collect the raw dates. Orientation is a
   // property of the file, so no row can be converted until all of them are in.
   const parsed = lines.slice(1).map((line, i) => {
-    const cells = splitLine(line);
+    const cells = split(line);
     return { cells, lineNo: i + 2, raw: (cells[dateIdx] ?? "").trim() };
   });
 
@@ -523,7 +462,7 @@ export function parseReportsCsv(text: string): ParseResult {
     COLUMNS.forEach((col, idx) => {
       const at = columnIndex[idx];
       if (at === -1) return; // column absent — leave the zeroed default
-      col.set(data, (cells[at] ?? "").trim());
+      col.set(data, decimalise((cells[at] ?? "").trim(), delimiter));
     });
 
     rows.push({
@@ -540,19 +479,4 @@ export function parseReportsCsv(text: string): ParseResult {
     // YYYY-MM-DD was not interpreted, so saying so would be noise.
     dateFormat: usedNumeric ? ORIENTATION_LABEL[orientation] : undefined,
   };
-}
-
-/** Trigger a browser download for generated text. */
-export function downloadText(
-  filename: string,
-  text: string,
-  mime = "text/csv;charset=utf-8",
-): void {
-  const blob = new Blob([text], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }
