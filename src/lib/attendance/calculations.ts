@@ -115,6 +115,55 @@ export function monthDates(iso: string): string[] {
  * vacation days are 0 by rule rather than by absence of data, and the two need
  * to stay distinguishable.
  */
+/**
+ * How long a day's gaps ran, in minutes.
+ *
+ * Every time is placed on the same day-line as the shift start before it is
+ * measured, so a break on a night shift that runs past midnight — clock out
+ * 23:30, back 00:15 — comes out as 45 minutes rather than as a negative number
+ * that would silently add time to the day.
+ */
+/**
+ * Read the shorthand a clerk types into a time field.
+ *
+ * The timesheet does not use `<input type="time">`: that renders in the
+ * machine's locale, which here means a 12-hour field with an AM/PM segment and
+ * a clock icon — three things to tab through to enter a number somebody already
+ * knows. A plant works in 24-hour time and somebody filling thirty rows wants to
+ * type "0700" and move on.
+ *
+ * So all of 7, 700, 0700, 7:00 and 07.00 are accepted and normalised to HH:mm.
+ * Anything that is not a time returns null rather than being rounded into one —
+ * a typo has to stay visible instead of quietly becoming midnight.
+ */
+export function parseTyped(raw: string): string | null {
+  const digits = raw.trim().replace(/[^\d]/g, "");
+  if (!digits || digits.length > 4) return null;
+
+  const hours = digits.length <= 2 ? Number(digits) : Number(digits.slice(0, -2));
+  const minutes = digits.length <= 2 ? 0 : Number(digits.slice(-2));
+
+  if (hours > 23 || minutes > 59) return null;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+export function breakTotal(entry: TimesheetEntry | undefined): number {
+  const start = parseTime(entry?.start);
+  if (!entry?.breaks?.length || start === null) return 0;
+
+  let total = 0;
+  for (const gap of entry.breaks) {
+    const rawFrom = parseTime(gap.from);
+    const rawTo = parseTime(gap.to);
+    if (rawFrom === null || rawTo === null) continue;
+
+    const from = rawFrom < start ? rawFrom + 24 * 60 : rawFrom;
+    const to = rawTo < start ? rawTo + 24 * 60 : rawTo;
+    total += Math.max(0, (to < from ? to + 24 * 60 : to) - from);
+  }
+  return total;
+}
+
 export function calculateEntry(entry: TimesheetEntry | undefined): EntryTotals {
   if (!entry || entry.status !== "present") {
     return { workedMinutes: entry ? 0 : null, overtimeMinutes: 0 };
@@ -127,9 +176,9 @@ export function calculateEntry(entry: TimesheetEntry | undefined): EntryTotals {
   }
 
   const end = rawEnd < start ? rawEnd + 24 * 60 : rawEnd;
-  // A break longer than the shift is a data-entry error; it cannot take the
+  // Breaks longer than the shift are a data-entry error; they cannot take the
   // worked total below zero.
-  const breakMinutes = Math.max(0, Math.min(entry.breakMinutes ?? 0, end - start));
+  const breakMinutes = Math.max(0, Math.min(breakTotal(entry), end - start));
   const workedMinutes = end - start - breakMinutes;
 
   return {

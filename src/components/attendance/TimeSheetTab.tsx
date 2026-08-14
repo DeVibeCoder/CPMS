@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { format, parseISO } from "date-fns";
 import { CheckCircle2, ChevronLeft, ChevronRight, Lock } from "lucide-react";
 
@@ -30,9 +30,12 @@ import {
   formatDuration,
   sumEntries,
 } from "@/lib/attendance/calculations";
+import { awayOn, wasEmployedOn } from "@/lib/attendance/staff";
 import { ATTENDANCE_STATUSES, type AttendanceStatus } from "@/types/attendance";
 import type { Timesheets } from "./useTimesheets";
-import { StatTile, StatusBadge } from "./shared";
+import { StatTile, StatusBadge, departureTint } from "./shared";
+import { TimeField } from "./TimeField";
+import { BreaksField } from "./BreaksField";
 
 /**
  * The daily timesheet — one day, every employee, filled in and signed off.
@@ -41,6 +44,11 @@ import { StatTile, StatusBadge } from "./shared";
  * the master sheet needs to be able to come back and see what was entered. It
  * can be reopened, which on a real system would be the point where an approval
  * trail starts.
+ *
+ * Rows for people booked away fill themselves in. A supervisor who has already
+ * recorded somebody's vacation on the Status tab should not have to say it again
+ * every morning of it, and a sheet where they had to would drift out of step
+ * with the staff list the first time somebody forgot.
  */
 export function TimeSheetTab({
   sheets,
@@ -54,22 +62,57 @@ export function TimeSheetTab({
   const isMobile = useIsMobile();
   const submitted = sheets.isSubmitted(date);
 
+  // The whole roster, not just current staff: somebody who has since left still
+  // belongs on the sheets for the days they worked, and dropping them would make
+  // a completed week stop adding up.
   const rows = useMemo(
     () =>
-      sheets.employees.map((employee) => {
-        const entry = sheets.entryFor(employee.id, date);
-        return { employee, entry, totals: calculateEntry(entry) };
-      }),
+      sheets.roster
+        .filter((employee) => wasEmployedOn(sheets.departures, employee.id, date))
+        .map((employee) => {
+          const entry = sheets.entryFor(employee.id, date);
+          return {
+            employee,
+            entry,
+            totals: calculateEntry(entry),
+            away: awayOn(sheets.departures, employee.id, date),
+          };
+        }),
     [sheets, date],
-  );
-
-  const dayTotals = useMemo(
-    () => sumEntries(rows.map((r) => r.entry)),
-    [rows],
   );
 
   const set = (employeeId: string, patch: Parameters<Timesheets["updateEntry"]>[2]) =>
     sheets.updateEntry(employeeId, date, patch);
+
+  /**
+   * Write the booked status onto the day's rows.
+   *
+   * Done as an effect rather than only at read time so the stored entry matches
+   * what the screen shows — the master sheet and every total read the entry, not
+   * this component, and a row that only *looked* like vacation would count as a
+   * worked day everywhere else.
+   */
+  useEffect(() => {
+    if (submitted) return;
+    for (const { employee, entry, away } of rows) {
+      const wanted: AttendanceStatus | null = away
+        ? (away.type as AttendanceStatus)
+        : null;
+      if (!wanted) continue;
+      if (entry?.status === wanted) continue;
+      set(employee.id, {
+        status: wanted,
+        start: undefined,
+        end: undefined,
+        breaks: undefined,
+      });
+    }
+    // `rows` is derived from the entries this writes to, so it is deliberately
+    // not a dependency — the guards above make the write idempotent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date, submitted, sheets.departures, sheets.roster]);
+
+  const dayTotals = useMemo(() => sumEntries(rows.map((r) => r.entry)), [rows]);
 
   const complete = () => {
     const unfinished = rows.filter(
@@ -79,7 +122,7 @@ export function TimeSheetTab({
       toast({
         variant: "destructive",
         title: "Some rows have no start or end time",
-        description: `${unfinished.map((r) => r.employee.name).join(", ")} — enter the times, or set the status to Sick or Vacation.`,
+        description: `${unfinished.map((r) => r.employee.name).join(", ")} — enter the times, or set the status to Sick, Vacation or Off site.`,
       });
       return;
     }
@@ -87,13 +130,14 @@ export function TimeSheetTab({
     toast({
       variant: "success",
       title: "Timesheet completed",
-      description: `${format(parseISO(date), "EEEE, dd MMM yyyy")} now appears in the master sheet.`,
+      description: `${format(parseISO(date), "EEEE dd MMM")} now appears in the master sheet.`,
     });
   };
 
   return (
     <div className="space-y-3">
-      {/* Day picker */}
+      {/* Day picker. The day name and the open/completed state are what a clerk
+          is checking; the full date is already in the field beside it. */}
       <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="outline"
@@ -121,8 +165,8 @@ export function TimeSheetTab({
         >
           <ChevronRight className="h-4 w-4" />
         </Button>
-        <span className="text-sm font-medium">
-          {format(parseISO(date), "EEEE, dd MMMM yyyy")}
+        <span className="text-sm font-semibold">
+          {format(parseISO(date), "EEEE")}
         </span>
         {submitted ? (
           <Badge variant="success" className="gap-1">
@@ -146,63 +190,74 @@ export function TimeSheetTab({
 
       {isMobile ? (
         <div className="space-y-2">
-          {rows.map(({ employee, entry, totals }) => (
-            <Card key={employee.id}>
-              <CardContent className="space-y-2 p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">{employee.name}</div>
-                    <div className="font-mono text-[11px] text-muted-foreground">
-                      {employee.id}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-semibold tabular-nums">
-                      {formatDuration(totals.workedMinutes)}
-                    </div>
-                    {totals.overtimeMinutes > 0 && (
-                      <div className="text-[11px] text-primary">
-                        OT {formatDuration(totals.overtimeMinutes)}
+          {rows.map(({ employee, entry, totals, away }) => {
+            const locked = submitted || Boolean(away);
+            return (
+              <Card key={employee.id} className={cn(away && departureTint(away.type))}>
+                <CardContent className="space-y-2 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{employee.name}</div>
+                      <div className="font-mono text-[11px] text-muted-foreground">
+                        {employee.id}
                       </div>
-                    )}
+                    </div>
+                    <div className="text-right">
+                      <div className="font-semibold tabular-nums">
+                        {formatDuration(totals.workedMinutes)}
+                      </div>
+                      {totals.overtimeMinutes > 0 && (
+                        <div className="text-[11px] text-primary">
+                          OT {formatDuration(totals.overtimeMinutes)}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <TimeField
-                    label="Start"
-                    value={entry?.start}
-                    disabled={submitted || entry?.status !== "present"}
-                    onChange={(v) => set(employee.id, { start: v })}
-                  />
-                  <BreakField
-                    value={entry?.breakMinutes}
-                    disabled={submitted || entry?.status !== "present"}
-                    onChange={(v) => set(employee.id, { breakMinutes: v })}
-                  />
-                  <TimeField
-                    label="End"
-                    value={entry?.end}
-                    disabled={submitted || entry?.status !== "present"}
-                    onChange={(v) => set(employee.id, { end: v })}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <StatusSelect
-                    value={entry?.status ?? "present"}
-                    disabled={submitted}
-                    onChange={(v) => set(employee.id, { status: v })}
-                  />
-                  <Input
-                    className="h-9"
-                    placeholder="Remarks"
-                    disabled={submitted}
-                    value={entry?.remarks ?? ""}
-                    onChange={(e) => set(employee.id, { remarks: e.target.value })}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                  <div className="grid grid-cols-3 gap-2">
+                    <TimeField
+                      label="Start"
+                      value={entry?.start}
+                      disabled={locked || entry?.status !== "present"}
+                      onChange={(v) => set(employee.id, { start: v })}
+                    />
+                    <div>
+                      <div className="mb-0.5 text-[10px] uppercase text-muted-foreground">
+                        Breaks
+                      </div>
+                      <BreaksField
+                        entry={entry}
+                        disabled={locked || entry?.status !== "present"}
+                        onChange={(breaks) => set(employee.id, { breaks })}
+                      />
+                    </div>
+                    <TimeField
+                      label="End"
+                      value={entry?.end}
+                      disabled={locked || entry?.status !== "present"}
+                      onChange={(v) => set(employee.id, { end: v })}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {locked ? (
+                      <StatusBadge status={entry?.status ?? "present"} />
+                    ) : (
+                      <StatusSelect
+                        value={entry?.status ?? "present"}
+                        onChange={(v) => set(employee.id, { status: v })}
+                      />
+                    )}
+                    <Input
+                      className="h-9"
+                      placeholder="Remarks"
+                      disabled={submitted}
+                      value={entry?.remarks ?? ""}
+                      onChange={(e) => set(employee.id, { remarks: e.target.value })}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       ) : (
         <Card>
@@ -213,20 +268,28 @@ export function TimeSheetTab({
                   <TableRow>
                     <TableHead className="w-[90px]">Emp ID</TableHead>
                     <TableHead className="min-w-[170px]">Name</TableHead>
-                    <TableHead className="w-[110px]">Start</TableHead>
-                    <TableHead className="w-[100px]">Break</TableHead>
-                    <TableHead className="w-[110px]">End</TableHead>
-                    <TableHead className="w-[100px] text-right">Total Hrs</TableHead>
-                    <TableHead className="w-[95px] text-right">OT Hrs</TableHead>
-                    <TableHead className="w-[130px]">Status</TableHead>
-                    <TableHead className="min-w-[180px]">Remarks</TableHead>
+                    <TableHead className="w-[80px]">Start</TableHead>
+                    <TableHead className="w-[110px]">Breaks</TableHead>
+                    <TableHead className="w-[80px]">End</TableHead>
+                    <TableHead className="w-[95px] text-right">Total Hrs</TableHead>
+                    <TableHead className="w-[90px] text-right">OT Hrs</TableHead>
+                    <TableHead className="w-[135px]">Status</TableHead>
+                    <TableHead className="min-w-[170px]">Remarks</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map(({ employee, entry, totals }) => {
-                    const away = (entry?.status ?? "present") !== "present";
+                  {rows.map(({ employee, entry, totals, away }) => {
+                    // A booked absence owns the row: the times are meaningless
+                    // and the status is not a choice while it runs.
+                    const locked = submitted || Boolean(away);
+                    const fieldsOff =
+                      locked || (entry?.status ?? "present") !== "present";
+
                     return (
-                      <TableRow key={employee.id} className={cn(away && "bg-muted/40")}>
+                      <TableRow
+                        key={employee.id}
+                        className={cn(away && departureTint(away.type))}
+                      >
                         <TableCell className="font-mono text-xs">
                           {employee.id}
                         </TableCell>
@@ -240,22 +303,24 @@ export function TimeSheetTab({
                         </TableCell>
                         <TableCell>
                           <TimeField
+                            aria-label={`Start for ${employee.name}`}
                             value={entry?.start}
-                            disabled={submitted || away}
+                            disabled={fieldsOff}
                             onChange={(v) => set(employee.id, { start: v })}
                           />
                         </TableCell>
                         <TableCell>
-                          <BreakField
-                            value={entry?.breakMinutes}
-                            disabled={submitted || away}
-                            onChange={(v) => set(employee.id, { breakMinutes: v })}
+                          <BreaksField
+                            entry={entry}
+                            disabled={fieldsOff}
+                            onChange={(breaks) => set(employee.id, { breaks })}
                           />
                         </TableCell>
                         <TableCell>
                           <TimeField
+                            aria-label={`End for ${employee.name}`}
                             value={entry?.end}
-                            disabled={submitted || away}
+                            disabled={fieldsOff}
                             onChange={(v) => set(employee.id, { end: v })}
                           />
                         </TableCell>
@@ -272,7 +337,7 @@ export function TimeSheetTab({
                           )}
                         </TableCell>
                         <TableCell>
-                          {submitted ? (
+                          {locked ? (
                             <StatusBadge status={entry?.status ?? "present"} />
                           ) : (
                             <StatusSelect
@@ -312,8 +377,7 @@ export function TimeSheetTab({
             </span>
           ) : (
             <span className="text-muted-foreground">
-              Check the times, then complete the day to send it to the master
-              sheet.
+              Times are 24-hour — type 0700. Check them, then complete the day.
             </span>
           )}
         </div>
@@ -328,66 +392,6 @@ export function TimeSheetTab({
           </Button>
         )}
       </div>
-    </div>
-  );
-}
-
-function TimeField({
-  value,
-  onChange,
-  disabled,
-  label,
-}: {
-  value?: string;
-  onChange: (value: string | undefined) => void;
-  disabled?: boolean;
-  label?: string;
-}) {
-  return (
-    <div>
-      {label && (
-        <div className="mb-0.5 text-[10px] uppercase text-muted-foreground">
-          {label}
-        </div>
-      )}
-      <Input
-        type="time"
-        className="h-8 px-2"
-        disabled={disabled}
-        value={value ?? ""}
-        onChange={(e) => onChange(e.target.value || undefined)}
-      />
-    </div>
-  );
-}
-
-/** The break is a duration, not a clock time — minutes off the shift. */
-function BreakField({
-  value,
-  onChange,
-  disabled,
-}: {
-  value?: number;
-  onChange: (value: number | undefined) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="relative">
-      <Input
-        type="number"
-        min={0}
-        step={15}
-        className="h-8 pr-9"
-        placeholder="0"
-        disabled={disabled}
-        value={value ?? ""}
-        onChange={(e) =>
-          onChange(e.target.value === "" ? undefined : Number(e.target.value))
-        }
-      />
-      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
-        min
-      </span>
     </div>
   );
 }

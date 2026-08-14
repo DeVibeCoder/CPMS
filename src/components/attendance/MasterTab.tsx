@@ -21,6 +21,7 @@ import {
   weekdayOf,
   weekDates,
 } from "@/lib/attendance/calculations";
+import { isCurrentStaff } from "@/lib/attendance/staff";
 import type { Timesheets } from "./useTimesheets";
 import { StatTile, WEEKDAY_LABELS } from "./shared";
 
@@ -46,27 +47,39 @@ export function MasterTab({ sheets }: { sheets: Timesheets }) {
     return all.filter((d) => weekdayOf(d) !== 0 && sheets.isSubmitted(d));
   }, [period, weekStart, month, sheets]);
 
+  // The whole roster, so a period somebody worked and then left still adds up.
+  // Which of them belong in *this* period is settled in `rows` below.
   const employees = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return sheets.employees.filter((e) => {
+    return sheets.roster.filter((e) => {
       if (department !== "all" && e.department !== department) return false;
       return !q || `${e.id} ${e.name}`.toLowerCase().includes(q);
     });
-  }, [sheets.employees, query, department]);
+  }, [sheets.roster, query, department]);
 
   const rows = useMemo(
     () =>
-      employees.map((employee) => {
-        const cells = dates.map((date) => {
-          const entry = sheets.entryFor(employee.id, date);
-          return { date, entry, totals: calculateEntry(entry) };
-        });
-        return {
-          employee,
-          cells,
-          totals: sumEntries(cells.map((c) => c.entry)),
-        };
-      }),
+      employees
+        .map((employee) => {
+          const cells = dates.map((date) => {
+            const entry = sheets.entryFor(employee.id, date);
+            return { date, entry, totals: calculateEntry(entry) };
+          });
+          return {
+            employee,
+            cells,
+            totals: sumEntries(cells.map((c) => c.entry)),
+          };
+        })
+        // Current staff always appear, so a week nobody filled in reads as zero
+        // hours rather than as nobody being employed. Somebody who has left
+        // appears only in the periods they actually worked — keeping them in
+        // every later month would fill the sheet with blank rows.
+        .filter(
+          ({ employee, cells }) =>
+            isCurrentStaff(sheets.departures, employee.id, sheets.today) ||
+            cells.some((c) => c.entry),
+        ),
     [employees, dates, sheets],
   );
 

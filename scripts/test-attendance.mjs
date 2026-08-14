@@ -16,6 +16,7 @@ import {
   formatShort,
   monthDates,
   parseTime,
+  parseTyped,
   startOfWeek,
   sumEntries,
   weekDates,
@@ -36,6 +37,7 @@ function test(name, fn) {
 }
 
 const H = 60;
+const LUNCH = { from: "12:00", to: "13:00", reason: "LUNCH" };
 const entry = (over = {}) => ({
   employeeId: "T1",
   date: "2026-08-03",
@@ -69,19 +71,19 @@ test("durations format for reading and for a dense grid", () => {
 console.log("\nA day's hours");
 
 test("start to end, less the break", () => {
-  const t = calculateEntry(entry({ start: "07:00", end: "17:00", breakMinutes: 60 }));
+  const t = calculateEntry(entry({ start: "07:00", end: "17:00", breaks: [LUNCH] }));
   assert.equal(t.workedMinutes, 9 * H);
   assert.equal(t.overtimeMinutes, 1 * H);
 });
 
 test("a short day has no overtime", () => {
-  const t = calculateEntry(entry({ start: "07:00", end: "15:00", breakMinutes: 60 }));
+  const t = calculateEntry(entry({ start: "07:00", end: "15:00", breaks: [LUNCH] }));
   assert.equal(t.workedMinutes, 7 * H);
   assert.equal(t.overtimeMinutes, 0);
 });
 
 test("exactly eight hours is not overtime", () => {
-  const t = calculateEntry(entry({ start: "07:00", end: "16:00", breakMinutes: 60 }));
+  const t = calculateEntry(entry({ start: "07:00", end: "16:00", breaks: [LUNCH] }));
   assert.equal(t.workedMinutes, DAILY_TARGET_MINUTES);
   assert.equal(t.overtimeMinutes, 0);
 });
@@ -93,21 +95,51 @@ test("no break recorded means nothing is deducted", () => {
 
 test("the break is never counted as worked time", () => {
   const withBreak = calculateEntry(
-    entry({ start: "07:00", end: "17:00", breakMinutes: 60 }),
+    entry({ start: "07:00", end: "17:00", breaks: [LUNCH] }),
   );
   const without = calculateEntry(entry({ start: "07:00", end: "17:00" }));
   assert.equal(without.workedMinutes - withBreak.workedMinutes, 60);
 });
 
 test("a break longer than the shift cannot make the day negative", () => {
-  const t = calculateEntry(entry({ start: "07:00", end: "09:00", breakMinutes: 600 }));
+  const t = calculateEntry(
+    entry({ start: "07:00", end: "09:00", breaks: [{ from: "09:00", to: "19:00" }] }),
+  );
   assert.equal(t.workedMinutes, 0);
 });
 
 test("a night shift crossing midnight is measured, not treated as negative", () => {
-  const t = calculateEntry(entry({ start: "19:00", end: "04:00", breakMinutes: 60 }));
+  // The break crosses midnight too — 23:00 to 00:00 is an hour, not minus 23.
+  const t = calculateEntry(
+    entry({ start: "19:00", end: "04:00", breaks: [{ from: "23:00", to: "00:00" }] }),
+  );
   assert.equal(t.workedMinutes, 8 * H);
   assert.equal(t.overtimeMinutes, 0);
+});
+
+test("a day can have more than one gap — the rain-release case", () => {
+  // Out at 07:00, lunch, released at 13:00 for weather, back at 15:00, home
+  // at 18:00. Eleven hours on site, three of them not worked.
+  const t = calculateEntry(
+    entry({
+      start: "07:00",
+      end: "18:00",
+      breaks: [LUNCH, { from: "13:00", to: "15:00", reason: "RAIN" }],
+    }),
+  );
+  assert.equal(t.workedMinutes, 8 * H);
+  assert.equal(t.overtimeMinutes, 0);
+});
+
+test("gaps are totalled, and an unreadable one is skipped not guessed", () => {
+  const t = calculateEntry(
+    entry({
+      start: "07:00",
+      end: "17:00",
+      breaks: [LUNCH, { from: "", to: "" }, { from: "15:00", to: "15:30" }],
+    }),
+  );
+  assert.equal(t.workedMinutes, 8 * H + 30);
 });
 
 console.log("\nMissing and non-working days");
@@ -127,7 +159,7 @@ test("sick and vacation are zero by rule, not by missing data", () => {
 
 test("a sick day ignores any times left behind on the row", () => {
   const t = calculateEntry(
-    entry({ status: "sick", start: "07:00", end: "17:00", breakMinutes: 60 }),
+    entry({ status: "sick", start: "07:00", end: "17:00", breaks: [LUNCH] }),
   );
   assert.equal(t.workedMinutes, 0);
   assert.equal(t.overtimeMinutes, 0);
@@ -137,7 +169,7 @@ console.log("\nTotals");
 
 test("a week of eight-hour days totals 48 with no overtime", () => {
   const week = Array.from({ length: 6 }, () =>
-    entry({ start: "07:00", end: "16:00", breakMinutes: 60 }),
+    entry({ start: "07:00", end: "16:00", breaks: [LUNCH] }),
   );
   const t = sumEntries(week);
   assert.equal(t.workedMinutes, 48 * H);
@@ -147,9 +179,9 @@ test("a week of eight-hour days totals 48 with no overtime", () => {
 
 test("overtime accumulates per day, above eight hours", () => {
   const t = sumEntries([
-    entry({ start: "07:00", end: "17:00", breakMinutes: 60 }), // 9h → 1h OT
-    entry({ start: "07:00", end: "18:00", breakMinutes: 60 }), // 10h → 2h OT
-    entry({ start: "07:00", end: "15:00", breakMinutes: 60 }), // 7h → none
+    entry({ start: "07:00", end: "17:00", breaks: [LUNCH] }), // 9h → 1h OT
+    entry({ start: "07:00", end: "18:00", breaks: [LUNCH] }), // 10h → 2h OT
+    entry({ start: "07:00", end: "15:00", breaks: [LUNCH] }), // 7h → none
   ]);
   assert.equal(t.workedMinutes, 26 * H);
   assert.equal(t.overtimeMinutes, 3 * H);
@@ -157,7 +189,7 @@ test("overtime accumulates per day, above eight hours", () => {
 
 test("unknown days are skipped rather than counted as zero", () => {
   const t = sumEntries([
-    entry({ start: "07:00", end: "16:00", breakMinutes: 60 }),
+    entry({ start: "07:00", end: "16:00", breaks: [LUNCH] }),
     undefined,
     entry({ start: "07:00" }),
   ]);
@@ -246,6 +278,473 @@ test("every present entry with both times parses", () => {
       calculateEntry(e).workedMinutes,
       null,
       `${e.employeeId} ${e.date} failed to parse`,
+    );
+  }
+});
+
+// -----------------------------------------------------------------------------
+// The staff list import. A file a clerk typed into Excel is the least
+// predictable input the module has, so the cases below are the ones that
+// actually arrive: reordered columns, blank cells, and a status column spelled
+// however that spreadsheet spelled it.
+// -----------------------------------------------------------------------------
+const { employeeTemplateCsv, employeesToCsv, parseEmployeesCsv } = await import(
+  "../src/lib/attendance/employeeCsv.ts"
+);
+
+console.log("\nEmployee import");
+
+const onSite = () => "on-site";
+
+test("the template is itself a valid import file", () => {
+  const { rows, errors } = parseEmployeesCsv(employeeTemplateCsv());
+  assert.deepEqual(errors, []);
+  assert.deepEqual(rows[0], {
+    id: "E001",
+    name: "EXAMPLE NAME",
+    position: "OPERATOR",
+    department: "CEMENT PLANT",
+    presence: "on-site",
+  });
+  assert.equal(rows[1].presence, "vacation");
+});
+
+test("an export can be imported back unchanged", () => {
+  const people = [
+    { id: "E001", name: 'O"Brien, A', department: "CEMENT PLANT", position: "OPERATOR" },
+    { id: "E002", name: "Beta", department: "ADMINISTRATION", position: "CLERK" },
+  ];
+  const { rows, errors } = parseEmployeesCsv(employeesToCsv(people, onSite));
+  assert.deepEqual(errors, []);
+  assert.deepEqual(
+    rows.map(({ presence, ...e }) => e),
+    people,
+  );
+});
+
+test("an export carries each person's own status back out", () => {
+  const people = [
+    { id: "E001", name: "One", department: "CEMENT PLANT", position: "OPERATOR" },
+    { id: "E002", name: "Two", department: "CEMENT PLANT", position: "CRANE OPERATOR" },
+  ];
+  const csv = employeesToCsv(people, (e) =>
+    e.id === "E002" ? "sick" : "off-site",
+  );
+  const { rows } = parseEmployeesCsv(csv);
+  assert.deepEqual(rows.map((r) => r.presence), ["off-site", "sick"]);
+});
+
+test("columns are matched by name, so reordering and extras are fine", () => {
+  const { rows, errors } = parseEmployeesCsv(
+    "Extra,Section,Name,Status,Emp ID,Designation\nx,CEMENT PLANT,Ali,Vacation,9001,Crane Operator\n",
+  );
+  assert.deepEqual(errors, []);
+  assert.deepEqual(rows[0], {
+    id: "9001",
+    name: "Ali",
+    position: "Crane Operator",
+    department: "CEMENT PLANT",
+    presence: "vacation",
+  });
+});
+
+test("staff numbers are taken in whatever form the plant writes them", () => {
+  const { rows, errors } = parseEmployeesCsv(
+    "Emp ID,Name\n7,Seven\nEMP-12/A,Slashes\n0042,Leading zeroes\n",
+  );
+  assert.deepEqual(errors, []);
+  assert.deepEqual(rows.map((r) => r.id), ["7", "EMP-12/A", "0042"]);
+});
+
+test("a blank status means on site, and the usual spellings are understood", () => {
+  const { rows, errors } = parseEmployeesCsv(
+    "Emp ID,Name,Status\nA1,One,\nA2,Two,ON SITE\nA3,Three,off-site\nA4,Four,Annual Leave\nA5,Five,sick leave\n",
+  );
+  assert.deepEqual(errors, []);
+  assert.deepEqual(rows.map((r) => r.presence), [
+    "on-site",
+    "on-site",
+    "off-site",
+    "vacation",
+    "sick",
+  ]);
+});
+
+test("an unreadable status is an error rather than a guess", () => {
+  const { rows, errors } = parseEmployeesCsv("Emp ID,Name,Status\nA1,One,maybe\n");
+  assert.equal(rows.length, 0);
+  assert.match(errors[0], /Line 2/);
+  assert.match(errors[0], /On site/);
+});
+
+test("a bad row is reported and the rest still import", () => {
+  const { rows, errors } = parseEmployeesCsv("Emp ID,Name\n,Nobody\nA2,\nA3,Three\n");
+  assert.deepEqual(rows.map((r) => r.id), ["A3"]);
+  assert.equal(errors.length, 2);
+});
+
+test("a repeated ID is skipped rather than silently overwriting", () => {
+  const { rows, errors } = parseEmployeesCsv(
+    "Emp ID,Name\nA1,One\na001,First\nA001,Second\n",
+  );
+  assert.deepEqual(rows.map((r) => r.name), ["One", "First"]);
+  assert.match(errors[0], /more than once/);
+});
+
+test("the blank rows Excel leaves behind are not errors", () => {
+  const { rows, errors } = parseEmployeesCsv("Emp ID,Name\nA1,One\n,\n , \n");
+  assert.equal(rows.length, 1);
+  assert.deepEqual(errors, []);
+});
+
+test("a file with the wrong headers is rejected with an instruction", () => {
+  const { rows, errors } = parseEmployeesCsv("Number,Person\n1,Ali\n");
+  assert.equal(rows.length, 0);
+  assert.match(errors[0], /template/);
+});
+
+test("an empty file is rejected", () => {
+  assert.match(parseEmployeesCsv("").errors[0], /empty/);
+});
+
+// Excel splits a double-clicked .csv on the machine's regional list separator,
+// so a comma file opens with every row in column A. The template says `sep=,`
+// to stop that — and has to survive the file coming back written the other way.
+
+test("the template tells Excel to split on commas", () => {
+  const [first] = employeeTemplateCsv().replace(/^﻿/, "").split("\r\n");
+  assert.equal(first, "sep=,");
+});
+
+test("the directive is a directive, not a row of staff", () => {
+  const { rows } = parseEmployeesCsv(employeeTemplateCsv());
+  assert.equal(rows.length, 2);
+  assert.ok(!rows.some((r) => r.id.startsWith("sep")));
+});
+
+test("a file Excel saved back with semicolons still imports", () => {
+  const { rows, errors } = parseEmployeesCsv(
+    "sep=,\r\nEmp ID;Name;Designation;Section;Status (On site/Off site/Vacation/Sick)\r\n" +
+      "E001;Ali;Operator;CEMENT PLANT;On site\r\n",
+  );
+  assert.deepEqual(errors, []);
+  assert.deepEqual(rows[0], {
+    id: "E001",
+    name: "Ali",
+    position: "Operator",
+    department: "CEMENT PLANT",
+    presence: "on-site",
+  });
+});
+
+test("a semicolon file keeps a comma inside a name", () => {
+  const { rows, errors } = parseEmployeesCsv("Emp ID;Name\r\nE001;Doe, John\r\n");
+  assert.deepEqual(errors, []);
+  assert.equal(rows[0].name, "Doe, John");
+});
+
+test("a tab-separated file imports too", () => {
+  const { rows } = parseEmployeesCsv("Emp ID\tName\tSection\nE001\tAli\tCEMENT PLANT\n");
+  assert.equal(rows[0].department, "CEMENT PLANT");
+});
+
+// -----------------------------------------------------------------------------
+// Departures.
+//
+// Vacation, sick, off site and exits are one list against one set of rules.
+// These assert the two that are easy to get backwards: an exit is loud
+// immediately and changes no status, and a spell away is silent until it starts.
+// -----------------------------------------------------------------------------
+const {
+  awayOn,
+  departureFromPresence,
+  exitOf,
+  hasExited,
+  isBooked,
+  isCurrentStaff,
+  isHighlighted,
+  isLeaving,
+  isOpenOn,
+  presenceOf,
+  upper,
+  wasEmployedOn,
+} = await import("../src/lib/attendance/staff.ts");
+
+console.log("\nDepartures");
+
+const TODAY = "2026-08-14";
+const person = (over = {}) => ({
+  id: "E001",
+  name: "Test Person",
+  department: "CEMENT PLANT",
+  position: "OPERATOR",
+  ...over,
+});
+const dep = (over = {}) => ({
+  id: "d1",
+  employeeId: "E001",
+  type: "vacation",
+  from: TODAY,
+  ...over,
+});
+
+test("an exit booked ahead keeps them on the staff list", () => {
+  const d = [dep({ type: "exit", from: "2026-09-30" })];
+  assert.equal(isCurrentStaff(d, "E001", TODAY), true);
+  assert.equal(hasExited(d, "E001", TODAY), false);
+});
+
+test("an exit booked ahead highlights the row straight away", () => {
+  const d = [dep({ type: "exit", from: "2026-09-30" })];
+  assert.equal(isLeaving(d, "E001", TODAY), true);
+  assert.equal(isHighlighted(d, "E001", TODAY), true);
+});
+
+test("a pending exit leaves the status alone", () => {
+  const d = [dep({ type: "exit", from: "2026-09-30" })];
+  assert.equal(presenceOf(person(), d, entry({ start: "07:00" }), TODAY), "on-site");
+  assert.equal(presenceOf(person(), d, undefined, TODAY), "on-site");
+});
+
+test("the exit date arriving takes them off the staff list", () => {
+  const d = [dep({ type: "exit", from: TODAY })];
+  assert.equal(hasExited(d, "E001", TODAY), true);
+  assert.equal(isCurrentStaff(d, "E001", TODAY), false);
+  // No longer pending, so no longer highlighted — they are on the other list.
+  assert.equal(isLeaving(d, "E001", TODAY), false);
+});
+
+test("someone who left still belongs on the sheets for the days they worked", () => {
+  const d = [dep({ type: "exit", from: "2026-08-10" })];
+  assert.equal(wasEmployedOn(d, "E001", "2026-08-07"), true);
+  assert.equal(wasEmployedOn(d, "E001", "2026-08-10"), false);
+  assert.equal(wasEmployedOn([], "E001", "2026-08-07"), true);
+});
+
+test("the earliest exit wins if two were entered", () => {
+  const d = [
+    dep({ id: "a", type: "exit", from: "2026-12-01" }),
+    dep({ id: "b", type: "exit", from: "2026-09-01" }),
+  ];
+  assert.equal(exitOf(d, "E001").from, "2026-09-01");
+});
+
+test("a departure booked ahead is not highlighted and changes nothing yet", () => {
+  const d = [dep({ from: "2026-09-01", to: "2026-09-14" })];
+  assert.equal(isBooked(d, "E001", TODAY), true);
+  assert.equal(awayOn(d, "E001", TODAY), undefined);
+  assert.equal(isHighlighted(d, "E001", TODAY), false);
+  assert.equal(presenceOf(person(), d, undefined, TODAY), "on-site");
+});
+
+test("the From date arriving highlights the row and shows the reason", () => {
+  const d = [dep({ from: TODAY, to: "2026-08-28" })];
+  assert.equal(Boolean(awayOn(d, "E001", TODAY)), true);
+  assert.equal(isHighlighted(d, "E001", TODAY), true);
+  assert.equal(presenceOf(person(), d, undefined, TODAY), "vacation");
+});
+
+test("each type reads back as its own status", () => {
+  for (const type of ["vacation", "sick", "off-site"]) {
+    const d = [dep({ type, from: "2026-08-01", to: "2026-08-20" })];
+    assert.equal(presenceOf(person(), d, undefined, TODAY), type);
+  }
+});
+
+test("a booked departure outranks a timesheet row that has not caught up", () => {
+  const d = [dep({ type: "sick", from: TODAY })];
+  assert.equal(presenceOf(person(), d, entry({ start: "07:00" }), TODAY), "sick");
+});
+
+test("a departure that has finished stops highlighting", () => {
+  const d = [dep({ from: "2026-07-01", to: "2026-07-14" })];
+  assert.equal(awayOn(d, "E001", TODAY), undefined);
+  assert.equal(isHighlighted(d, "E001", TODAY), false);
+});
+
+test("a departure with no To date is still running", () => {
+  const d = [dep({ type: "sick", from: "2026-07-01" })];
+  assert.equal(Boolean(awayOn(d, "E001", TODAY)), true);
+});
+
+test("one person's departure does not touch anybody else", () => {
+  const d = [dep({ employeeId: "E002", type: "exit", from: "2026-01-01" })];
+  assert.equal(hasExited(d, "E001", TODAY), false);
+  assert.equal(isHighlighted(d, "E001", TODAY), false);
+});
+
+test("on site is the default — nobody has to clock in to earn it", () => {
+  // The bug this replaces: a staff list imported as On site read back as Off
+  // site, because nobody had a timesheet row yet.
+  assert.equal(presenceOf(person(), [], undefined, TODAY), "on-site");
+  assert.equal(presenceOf(person(), [], entry({ start: "07:00" }), TODAY), "on-site");
+  assert.equal(
+    presenceOf(person(), [], entry({ start: "07:00", end: "16:00" }), TODAY),
+    "on-site",
+  );
+});
+
+test("Status holds what is running or still to come; History holds the rest", () => {
+  // An exit closes the day it arrives — after that the person has gone.
+  assert.equal(isOpenOn(dep({ type: "exit", from: "2026-09-30" }), TODAY), true);
+  assert.equal(isOpenOn(dep({ type: "exit", from: TODAY }), TODAY), false);
+  // A spell closes when its To date passes.
+  assert.equal(isOpenOn(dep({ to: "2026-08-20" }), TODAY), true);
+  assert.equal(isOpenOn(dep({ from: "2026-07-01", to: "2026-07-14" }), TODAY), false);
+  // Open-ended means open-ended.
+  assert.equal(isOpenOn(dep({ from: "2026-01-01" }), TODAY), true);
+});
+
+test("off site is booked, not inferred from an empty timesheet", () => {
+  const d = [dep({ type: "off-site", from: TODAY, to: "2026-08-20" })];
+  assert.equal(presenceOf(person(), d, undefined, TODAY), "off-site");
+  // ...and it ends when the booking ends.
+  assert.equal(presenceOf(person(), d, undefined, "2026-08-21"), "on-site");
+});
+
+test("a day marked sick on the timesheet shows as Sick", () => {
+  assert.equal(presenceOf(person(), [], entry({ status: "sick" }), TODAY), "sick");
+  assert.equal(
+    presenceOf(person(), [], entry({ status: "vacation" }), TODAY),
+    "vacation",
+  );
+});
+
+test("an imported status becomes an open departure, and On site becomes none", () => {
+  assert.equal(departureFromPresence("E001", "on-site", TODAY, "x"), undefined);
+  assert.deepEqual(departureFromPresence("E001", "sick", TODAY, "x"), {
+    id: "x",
+    employeeId: "E001",
+    type: "sick",
+    from: TODAY,
+  });
+});
+
+test("an imported status round-trips back to the same status", () => {
+  for (const presence of ["off-site", "vacation", "sick"]) {
+    const d = [departureFromPresence("E001", presence, TODAY, "x")];
+    assert.equal(presenceOf(person(), d, undefined, TODAY), presence);
+  }
+});
+
+// -----------------------------------------------------------------------------
+// The sample staff, and the sections a cement plant has.
+// -----------------------------------------------------------------------------
+const { PLANT_SECTIONS, normaliseSection } = await import(
+  "../src/lib/attendance/sections.ts"
+);
+
+console.log("\nSample data and sections");
+
+test("every sample employee is flagged, so the staff list starts empty", () => {
+  assert.ok(MOCK_EMPLOYEES.length > 0);
+  assert.ok(MOCK_EMPLOYEES.every((e) => e.sample === true));
+});
+
+test("nobody carries an active flag any more — status is derived", () => {
+  assert.ok(MOCK_EMPLOYEES.every((e) => !("active" in e)));
+});
+
+test("the sample is stored in the same upper case as everything else", () => {
+  for (const e of MOCK_EMPLOYEES) {
+    assert.equal(e.name, e.name.toUpperCase(), `${e.name} is not upper case`);
+    assert.equal(e.position, e.position.toUpperCase());
+  }
+});
+
+test("there are exactly two sections, and both are upper case", () => {
+  assert.deepEqual([...PLANT_SECTIONS], ["CEMENT PLANT", "ADMINISTRATION"]);
+});
+
+test("upper trims as well as capitalises, so stray spaces do not split names", () => {
+  assert.equal(upper("  ahmed shareef "), "AHMED SHAREEF");
+  assert.equal(upper("Emp-12/a"), "EMP-12/A");
+});
+
+test("a section is folded onto the fixed list however it was typed", () => {
+  assert.equal(normaliseSection("cement plant"), "CEMENT PLANT");
+  assert.equal(normaliseSection("  Administration "), "ADMINISTRATION");
+});
+
+test("a section that does not exist is kept, not silently relabelled", () => {
+  assert.equal(normaliseSection("Quarry"), "QUARRY");
+});
+
+// -----------------------------------------------------------------------------
+// The org chart. Posts, not people — the shape is fixed and who fills it is not.
+// -----------------------------------------------------------------------------
+const { ALL_SLOTS, PLANT_GROUPS, DISPATCH_GROUPS } = await import(
+  "../src/lib/attendance/orgChart.ts"
+);
+
+// 33 posts, of which the paper chart shows 32 filled — Plant-3's assistant
+// plant operator is vacant. Posts and people are different counts, and the
+// chart has to be able to say so.
+test("the chart holds every post, vacant ones included", () => {
+  assert.equal(ALL_SLOTS.length, 33);
+});
+
+test("the manpower lines add up the way the paper chart does", () => {
+  const by = (line) => ALL_SLOTS.filter((s) => s.counts === line).length;
+  assert.equal(by("manager"), 1);
+  assert.equal(by("dispatch"), 1);
+  assert.equal(by("supervisor"), 2);
+  assert.equal(by("plantOperator"), 3);
+  assert.equal(by("assistantPlantOperator"), 3);
+  assert.equal(by("vehicleOperator"), 7);
+  assert.equal(by("assistant"), 16);
+});
+
+test("slot ids are unique — they are the key assignments are stored against", () => {
+  const ids = ALL_SLOTS.map((s) => s.id);
+  assert.equal(new Set(ids).size, ids.length);
+});
+
+test("each plant has an operator, an assistant operator and four assistants", () => {
+  assert.equal(PLANT_GROUPS.length, 3);
+  for (const g of PLANT_GROUPS) {
+    assert.equal(g.slots.length, 6);
+    assert.equal(g.slots.filter((s) => s.counts === "assistant").length, 4);
+  }
+});
+
+test("logistics holds all seven vehicle operators", () => {
+  const logistics = DISPATCH_GROUPS.find((g) => g.id === "logistics");
+  assert.equal(logistics.slots.length, 7);
+  assert.ok(logistics.slots.every((s) => s.counts === "vehicleOperator"));
+});
+
+// -----------------------------------------------------------------------------
+// Typed times. The timesheet takes 24-hour input rather than a locale picker.
+// -----------------------------------------------------------------------------
+console.log("\nTyped times");
+
+test("the shorthand a clerk actually types is understood", () => {
+  assert.equal(parseTyped("7"), "07:00");
+  assert.equal(parseTyped("700"), "07:00");
+  assert.equal(parseTyped("0700"), "07:00");
+  assert.equal(parseTyped("7:00"), "07:00");
+  assert.equal(parseTyped("07.00"), "07:00");
+  assert.equal(parseTyped(" 1930 "), "19:30");
+  assert.equal(parseTyped("2359"), "23:59");
+  assert.equal(parseTyped("0"), "00:00");
+});
+
+test("a time that is not a time is refused, not rounded into one", () => {
+  assert.equal(parseTyped(""), null);
+  assert.equal(parseTyped("2500"), null);
+  assert.equal(parseTyped("0760"), null);
+  assert.equal(parseTyped("abc"), null);
+  assert.equal(parseTyped("123456"), null);
+});
+
+console.log("\nSample data and sections");
+
+test("every sample section is one the plant actually has", () => {
+  for (const e of MOCK_EMPLOYEES) {
+    assert.ok(
+      PLANT_SECTIONS.includes(e.department),
+      `${e.department} is not a plant section`,
     );
   }
 });

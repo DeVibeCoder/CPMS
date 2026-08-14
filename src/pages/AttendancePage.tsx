@@ -8,23 +8,30 @@ import { MockDataNotice } from "@/components/attendance/shared";
 import { EmployeesTab } from "@/components/attendance/EmployeesTab";
 import { TimeSheetTab } from "@/components/attendance/TimeSheetTab";
 import { MasterTab } from "@/components/attendance/MasterTab";
+import { OrgChartTab } from "@/components/attendance/OrgChartTab";
 
 /**
  * Attendance — staff working hours.
  *
- * Under development and administrator-only. It runs entirely on mock data from
- * `src/data/attendance`; nothing here reads or writes the plant's reports,
- * Supabase, or any staff record. The seam that will eventually carry real data
- * is `attendanceSource`, and swapping it is meant to leave every component on
- * this page untouched.
+ * Under development and administrator-only. Nothing here reads or writes the
+ * plant's reports, Supabase, or any HR system: the timesheets start from the
+ * sample in `src/data/attendance`, and everything entered on top of it is kept
+ * in the browser's local storage. That is enough to trial the module and is not
+ * a backend — one machine, one browser, gone if site data is cleared.
  *
- * Three tabs, in the order the work happens: who the staff are, the day being
- * filled in, and the completed days everybody reads figures off.
+ * The seam that will eventually carry real data is `attendanceSource`, and
+ * swapping it is meant to leave every component on this page untouched.
+ *
+ * Four tabs, in the order the work happens: who the staff are, the day being
+ * filled in, the completed days everybody reads figures off, and the chart of
+ * who holds which post.
  */
 export default function AttendancePage() {
   usePageMeta("Attendance", "Staff working hours — under development");
   const sheets = useTimesheets();
-  const [tab, setTab] = useState("timesheet");
+  // Employees first: the staff list is what a plant has to fill in before the
+  // timesheet has anything to be filled in against.
+  const [tab, setTab] = useState("employees");
   const [date, setDate] = useState<string | null>(null);
 
   if (sheets.error) {
@@ -54,14 +61,29 @@ export default function AttendancePage() {
 
   return (
     <div className="space-y-4">
-      <MockDataNotice />
+      <MockDataNotice onReset={sheets.reset} />
 
       <Tabs value={tab} onValueChange={setTab}>
+        {/* The active tab takes the app's primary colour rather than the
+            default plain white card. Both are theme tokens, so the light and
+            dark palettes each supply their own pair and the contrast between
+            them holds without a second rule here. */}
         <div className="overflow-x-auto scrollbar-none">
-          <TabsList>
-            <TabsTrigger value="employees">Employees</TabsTrigger>
-            <TabsTrigger value="timesheet">Time Sheet</TabsTrigger>
-            <TabsTrigger value="master">Master</TabsTrigger>
+          <TabsList className="bg-primary/10 dark:bg-primary/[0.14]">
+            {[
+              { value: "employees", label: "Employees" },
+              { value: "timesheet", label: "Time Sheet" },
+              { value: "master", label: "Master" },
+              { value: "org", label: "Org Chart" },
+            ].map((t) => (
+              <TabsTrigger
+                key={t.value}
+                value={t.value}
+                className="text-primary/70 hover:text-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow"
+              >
+                {t.label}
+              </TabsTrigger>
+            ))}
           </TabsList>
         </div>
 
@@ -77,6 +99,9 @@ export default function AttendancePage() {
         </TabsContent>
         <TabsContent value="master">
           <MasterTab sheets={sheets} />
+        </TabsContent>
+        <TabsContent value="org">
+          <OrgChartTab sheets={sheets} />
         </TabsContent>
       </Tabs>
     </div>

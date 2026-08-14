@@ -11,22 +11,108 @@
  */
 
 export interface Employee {
-  /** Plant staff number, e.g. "CP001". */
+  /** Plant staff number, whatever form the plant writes it in. */
   id: string;
   name: string;
   department: string;
   position: string;
-  active: boolean;
+  /**
+   * Invented staff from `src/data/attendance`. They fill the timesheet and
+   * master sheet so those screens have something to read, and are kept off the
+   * staff list so it starts empty for a real plant's own people.
+   */
+  sample?: boolean;
+}
+
+/**
+ * The four ways somebody is away, and the one column that records them.
+ *
+ * Vacation, sick and off site are spells with two ends — they start and they
+ * finish. An exit has only a start, because there is no coming back from it.
+ * They are one type rather than two because a supervisor entering any of them
+ * is doing the same thing: writing down a date somebody will not be at work.
+ */
+export type DepartureType = "vacation" | "sick" | "off-site" | "exit";
+
+export const DEPARTURE_TYPES: {
+  value: DepartureType;
+  label: string;
+  /** An exit is one-way, so it has no return date. */
+  ranged: boolean;
+}[] = [
+  { value: "vacation", label: "Vacation", ranged: true },
+  { value: "sick", label: "Sick", ranged: true },
+  { value: "off-site", label: "Off site", ranged: true },
+  { value: "exit", label: "Exit", ranged: false },
+];
+
+export const DEPARTURE_LABELS: Record<DepartureType, string> = {
+  vacation: "Vacation",
+  sick: "Sick",
+  "off-site": "Off site",
+  exit: "Exit",
+};
+
+/**
+ * One spell away, entered before it starts.
+ *
+ * Held apart from the timesheet because it is written weeks ahead, when the
+ * timesheet rows for those days do not exist yet.
+ */
+export interface Departure {
+  /** Local row id. Departures are edited and deleted as rows, not by key. */
+  id: string;
+  employeeId: string;
+  type: DepartureType;
+  /** ISO date it starts. For an exit, their last day. */
+  from: string;
+  /** ISO date it ends, inclusive. Never set for an exit; optional otherwise. */
+  to?: string;
 }
 
 /** Why somebody is not on the clock. Present is the ordinary case. */
-export type AttendanceStatus = "present" | "sick" | "vacation";
+export type AttendanceStatus = "present" | "sick" | "vacation" | "off-site";
 
 export const ATTENDANCE_STATUSES: { value: AttendanceStatus; label: string }[] = [
   { value: "present", label: "Present" },
   { value: "sick", label: "Sick" },
   { value: "vacation", label: "Vacation" },
+  { value: "off-site", label: "Off site" },
 ];
+
+/**
+ * A gap in the day, as two clock times.
+ *
+ * Timed rather than a total in minutes, because the plant's gaps are not all
+ * the lunch break. When production stops for rain the crew is sent off and
+ * called back when it clears, so a day can carry two or three gaps and what
+ * matters is *when* — a crew released at 13:00 and back at 15:00 is a different
+ * day from one that took two hours at lunch, even though both lose 120 minutes.
+ */
+export interface TimeBreak {
+  /** "HH:mm", 24-hour. */
+  from: string;
+  to: string;
+  /** Why the gap. Blank for the ordinary break; "RAIN" for a release. */
+  reason?: string;
+}
+
+/**
+ * Where somebody stands right now, which is what the staff list shows.
+ *
+ * Not the same thing as `AttendanceStatus`: that records what a *day* was, after
+ * the fact, on a timesheet. This is read off today's row and today's departures,
+ * and answers "is this person at the plant" rather than "how should this day be
+ * counted".
+ */
+export type PresenceStatus = "on-site" | "off-site" | "sick" | "vacation";
+
+export const PRESENCE_LABELS: Record<PresenceStatus, string> = {
+  "on-site": "On site",
+  "off-site": "Off site",
+  sick: "Sick",
+  vacation: "Vacation",
+};
 
 /**
  * One person, one day.
@@ -41,8 +127,8 @@ export interface TimesheetEntry {
   /** ISO date, YYYY-MM-DD. */
   date: string;
   start?: string;
-  /** Break length in minutes. A duration, not a clock time. */
-  breakMinutes?: number;
+  /** Every gap in the day, in the order they happened. */
+  breaks?: TimeBreak[];
   end?: string;
   status: AttendanceStatus;
   remarks?: string;
