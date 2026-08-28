@@ -16,15 +16,6 @@ export interface Employee {
   name: string;
   department: string;
   position: string;
-  /**
-   * Invented staff from `src/data/attendance`.
-   *
-   * They are on every list a real person is on — the module ships with a plant
-   * already in it so each screen can be checked against something before a real
-   * name is loaded. The flag is what "Reset to sample" restores them from, and
-   * what tells anybody reading a row that it is not a person.
-   */
-  sample?: boolean;
 }
 
 /**

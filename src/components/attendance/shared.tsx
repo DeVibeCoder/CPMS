@@ -10,36 +10,6 @@ import {
   type PresenceStatus,
 } from "@/types/attendance";
 
-/**
- * Keeps a reviewer from mistaking the sample for live plant data.
- *
- * It says where the data is kept as well as what it is: now that the module
- * saves to the browser, "sample data" on its own would leave somebody assuming
- * their imported staff list is backed up somewhere. It is not.
- */
-export function MockDataNotice({ onReset }: { onReset?: () => void }) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-warning/30 bg-warning/[0.07] px-3 py-2 text-xs">
-      <Badge variant="warning">Under development</Badge>
-      <span className="text-muted-foreground">
-        This opens on an invented plant — sample staff, sample departures, sample
-        shifts. Use Remove all on the Employees tab to clear it and start on your
-        own list. Attendance is not connected to any payroll or HR system: what
-        you enter is saved in this browser only, and clearing site data loses it.
-      </span>
-      {onReset && (
-        <button
-          type="button"
-          className="ml-auto font-medium text-warning underline-offset-2 hover:underline"
-          onClick={onReset}
-        >
-          Reset to sample
-        </button>
-      )}
-    </div>
-  );
-}
-
 /** One figure in a summary strip. Compact — several sit side by side. */
 export function StatTile({
   label,

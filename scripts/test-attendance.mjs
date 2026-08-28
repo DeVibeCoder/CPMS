@@ -221,70 +221,91 @@ test("month dates cover the month and nothing else", () => {
 });
 
 // -----------------------------------------------------------------------------
-// The mock data has to contain the cases it claims to, or the screens look
-// finished while never showing anything interesting.
+// The row shapes.
+//
+// Columns are snake_case and the domain types are camelCase, so something has to
+// translate — and the translation is not only naming. The database says "absent"
+// with null; the domain says it by leaving the property off. A row that came back
+// from a round trip looking different from the one that went in would read as an
+// edit to the change detector that decides what to save, and every untouched
+// sheet in the plant would be written back on every load.
 // -----------------------------------------------------------------------------
 const {
-  MOCK_CHART,
-  MOCK_DEPARTURES,
-  MOCK_EMPLOYEES,
-  MOCK_ENTRIES,
-  MOCK_SUBMITTED_DATES,
-  MOCK_TODAY,
-} = await import("../src/data/attendance/mockData.ts");
+  fromDeparture,
+  fromEmployee,
+  fromEntry,
+  toDeparture,
+  toEmployee,
+  toEntry,
+} = await import("../src/lib/attendance/rows.ts");
 
-console.log("\nMock data");
+console.log("\nRow mapping");
 
-test("there are enough employees to be worth filtering", () => {
-  assert.ok(MOCK_EMPLOYEES.length >= 10, `only ${MOCK_EMPLOYEES.length} employees`);
+const roundTripEntry = (e) => toEntry(fromEntry(e));
+
+test("a worked day round-trips unchanged", () => {
+  const day = entry({ start: "07:00", end: "16:00", breaks: [LUNCH], remarks: "OK" });
+  assert.deepEqual(roundTripEntry(day), day);
 });
 
-test("no real-looking identifiers leak in", () => {
-  for (const e of MOCK_EMPLOYEES) assert.match(e.id, /^CP\d{3}$/);
-});
+test("absent is the property missing, not a null", () => {
+  const bare = entry();
+  const there = fromEntry(bare);
+  assert.equal(there.start_time, null);
+  assert.equal(there.end_time, null);
+  assert.equal(there.remarks, null);
 
-test("nothing is dated in the future", () => {
-  const today = new Date().toISOString().slice(0, 10);
-  for (const e of MOCK_ENTRIES) assert.ok(e.date <= today, `${e.date} is ahead of today`);
-});
-
-test("past days are already completed, today is left open to try", () => {
-  const today = new Date().toISOString().slice(0, 10);
-  assert.ok(MOCK_SUBMITTED_DATES.length > 0, "nothing to show in the master sheet");
-  assert.ok(!MOCK_SUBMITTED_DATES.includes(today), "today should still be open");
-});
-
-test("the sample contains sick, vacation and a missing clock-out", () => {
-  assert.ok(MOCK_ENTRIES.some((e) => e.status === "sick"), "no sick day");
-  assert.ok(MOCK_ENTRIES.some((e) => e.status === "vacation"), "no vacation day");
-  assert.ok(
-    MOCK_ENTRIES.some((e) => e.status === "present" && e.start && !e.end),
-    "no missing clock-out",
-  );
-});
-
-test("the sample contains overtime, a short day and a night shift", () => {
-  const totals = MOCK_ENTRIES.map((e) => ({ e, t: calculateEntry(e) }));
-  assert.ok(totals.some(({ t }) => t.overtimeMinutes > 0), "no overtime");
-  assert.ok(
-    totals.some(({ t }) => t.workedMinutes !== null && t.workedMinutes < 8 * H && t.workedMinutes > 0),
-    "no short day",
-  );
-  assert.ok(
-    MOCK_ENTRIES.some((e) => e.start && e.end && e.end < e.start),
-    "no night shift",
-  );
-});
-
-test("every present entry with both times parses", () => {
-  for (const e of MOCK_ENTRIES) {
-    if (e.status !== "present" || !e.start || !e.end) continue;
-    assert.notEqual(
-      calculateEntry(e).workedMinutes,
-      null,
-      `${e.employeeId} ${e.date} failed to parse`,
-    );
+  const back = roundTripEntry(bare);
+  for (const key of ["start", "end", "remarks", "breaks", "auto"]) {
+    assert.ok(!(key in back), `${key} came back as a key`);
   }
+});
+
+test("a day with no gaps and a day with an empty list are the same day", () => {
+  assert.deepEqual(roundTripEntry(entry({ breaks: [] })), roundTripEntry(entry()));
+});
+
+test("a remarks box typed into and cleared again holds no remark", () => {
+  assert.equal(fromEntry(entry({ remarks: "   " })).remarks, null);
+});
+
+test("a row written from a booking says so, and one that was not stays quiet", () => {
+  const booked = entry({ status: "vacation", auto: true });
+  assert.equal(fromEntry(booked).auto, true);
+  assert.equal(roundTripEntry(booked).auto, true);
+  assert.equal(fromEntry(entry()).auto, false);
+});
+
+test("an employee round-trips unchanged", () => {
+  const person = {
+    id: "CP001",
+    name: "AHMED SHAREEF",
+    department: "CEMENT PLANT",
+    position: "OPERATION MANAGER",
+  };
+  assert.deepEqual(toEmployee(fromEmployee(person)), person);
+});
+
+test("a spell away round-trips, and a one-way exit keeps no end date", () => {
+  const spell = {
+    id: "d1",
+    employeeId: "CP001",
+    type: "vacation",
+    from: "2026-08-10",
+    to: "2026-08-20",
+  };
+  assert.deepEqual(toDeparture(fromDeparture(spell)), spell);
+
+  const leaving = { id: "d2", employeeId: "CP001", type: "exit", from: "2026-09-30" };
+  assert.equal(fromDeparture(leaving).to_date, null);
+  const back = toDeparture(fromDeparture(leaving));
+  assert.ok(!("to" in back), "an exit came back with a To date");
+  assert.deepEqual(back, leaving);
+});
+
+test("an open-ended spell is the same shape as an exit's missing end", () => {
+  const open = { id: "d3", employeeId: "CP001", type: "sick", from: "2026-08-10" };
+  assert.deepEqual(toDeparture(fromDeparture(open)), open);
 });
 
 // -----------------------------------------------------------------------------
@@ -633,29 +654,13 @@ test("an imported status round-trips back to the same status", () => {
 });
 
 // -----------------------------------------------------------------------------
-// The sample staff, and the sections a cement plant has.
+// The sections a cement plant has.
 // -----------------------------------------------------------------------------
 const { PLANT_SECTIONS, normaliseSection } = await import(
   "../src/lib/attendance/sections.ts"
 );
 
-console.log("\nSample data and sections");
-
-test("every sample employee is flagged as invented", () => {
-  assert.ok(MOCK_EMPLOYEES.length > 0);
-  assert.ok(MOCK_EMPLOYEES.every((e) => e.sample === true));
-});
-
-test("nobody carries an active flag any more — status is derived", () => {
-  assert.ok(MOCK_EMPLOYEES.every((e) => !("active" in e)));
-});
-
-test("the sample is stored in the same upper case as everything else", () => {
-  for (const e of MOCK_EMPLOYEES) {
-    assert.equal(e.name, e.name.toUpperCase(), `${e.name} is not upper case`);
-    assert.equal(e.position, e.position.toUpperCase());
-  }
-});
+console.log("\nSections");
 
 test("there are exactly two sections, and both are upper case", () => {
   assert.deepEqual([...PLANT_SECTIONS], ["CEMENT PLANT", "ADMINISTRATION"]);
@@ -872,83 +877,6 @@ test("splitting into columns loses nobody", () => {
 });
 
 // -----------------------------------------------------------------------------
-// The sample plant. It ships filled in — a staff list, what is booked against
-// them, and who holds which post — because every screen in the module reads one
-// of those three and a blank one shows nothing of what it does.
-// -----------------------------------------------------------------------------
-console.log("\nSample plant");
-
-test("the sample fills the chart, and leaves a real vacancy on it", () => {
-  const posts = new Set(ALL_SLOTS.map((s) => s.id));
-  for (const slot of Object.keys(MOCK_CHART)) {
-    assert.ok(posts.has(slot), `${slot} is not a post on the chart`);
-  }
-  assert.equal(Object.keys(MOCK_CHART).length, ALL_SLOTS.length - 1);
-});
-
-test("nobody holds two posts", () => {
-  const held = Object.values(MOCK_CHART);
-  assert.equal(new Set(held).size, held.length);
-});
-
-test("every post is filled by somebody on the staff list", () => {
-  const ids = new Set(MOCK_EMPLOYEES.map((e) => e.id));
-  for (const id of Object.values(MOCK_CHART)) {
-    assert.ok(ids.has(id), `${id} holds a post but is not on the staff list`);
-  }
-});
-
-test("the departures cover every state the Status tab can be in", () => {
-  const open = MOCK_DEPARTURES.filter((d) => isOpenOn(d, MOCK_TODAY));
-  const past = MOCK_DEPARTURES.filter((d) => !isOpenOn(d, MOCK_TODAY));
-  assert.ok(open.length > 0, "nothing on the Status tab");
-  assert.ok(past.length > 0, "nothing in History");
-
-  assert.ok(
-    MOCK_DEPARTURES.some((d) => awayOn(MOCK_DEPARTURES, d.employeeId, MOCK_TODAY)),
-    "nobody is away today",
-  );
-  assert.ok(
-    MOCK_DEPARTURES.some((d) => d.type !== "exit" && !d.to),
-    "no open-ended spell",
-  );
-  assert.ok(
-    MOCK_DEPARTURES.some((d) => isBooked(MOCK_DEPARTURES, d.employeeId, MOCK_TODAY)),
-    "nothing booked ahead",
-  );
-  assert.ok(
-    MOCK_DEPARTURES.some((d) => isLeaving(MOCK_DEPARTURES, d.employeeId, MOCK_TODAY)),
-    "nobody is leaving",
-  );
-  assert.ok(
-    MOCK_DEPARTURES.some((d) => hasExited(MOCK_DEPARTURES, d.employeeId, MOCK_TODAY)),
-    "nobody has left",
-  );
-});
-
-test("every departure is against somebody who exists", () => {
-  const ids = new Set(MOCK_EMPLOYEES.map((e) => e.id));
-  for (const d of MOCK_DEPARTURES) assert.ok(ids.has(d.employeeId), d.employeeId);
-});
-
-test("the sheets agree with the departures they shipped with", () => {
-  for (const e of MOCK_ENTRIES) {
-    const wanted = bookedStatus(MOCK_DEPARTURES, e.employeeId, e.date);
-    if (wanted) {
-      assert.equal(e.status, wanted, `${e.employeeId} ${e.date}`);
-      assert.equal(e.start, undefined, `${e.employeeId} ${e.date} still has hours`);
-    }
-  }
-});
-
-test("somebody who has left has no rows from their last day on", () => {
-  for (const e of MOCK_ENTRIES) {
-    const exit = exitOf(MOCK_DEPARTURES, e.employeeId);
-    if (exit) assert.ok(e.date < exit.from, `${e.employeeId} has a row for ${e.date}`);
-  }
-});
-
-// -----------------------------------------------------------------------------
 // Typed times. The timesheet takes 24-hour input rather than a locale picker.
 // -----------------------------------------------------------------------------
 console.log("\nTyped times");
@@ -970,17 +898,6 @@ test("a time that is not a time is refused, not rounded into one", () => {
   assert.equal(parseTyped("0760"), null);
   assert.equal(parseTyped("abc"), null);
   assert.equal(parseTyped("123456"), null);
-});
-
-console.log("\nSample data and sections");
-
-test("every sample section is one the plant actually has", () => {
-  for (const e of MOCK_EMPLOYEES) {
-    assert.ok(
-      PLANT_SECTIONS.includes(e.department),
-      `${e.department} is not a plant section`,
-    );
-  }
 });
 
 // -----------------------------------------------------------------------------

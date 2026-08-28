@@ -1,10 +1,12 @@
 import { useCallback, useState } from "react";
+import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePageMeta } from "@/store/pageMeta";
+import { Button } from "@/components/ui/button";
+import { RefreshCw } from "lucide-react";
 import { useTimesheets } from "@/components/attendance/useTimesheets";
-import { MockDataNotice } from "@/components/attendance/shared";
 import { EmployeesTab } from "@/components/attendance/EmployeesTab";
 import { TimeSheetTab } from "@/components/attendance/TimeSheetTab";
 import { MasterTab } from "@/components/attendance/MasterTab";
@@ -13,15 +15,13 @@ import { OrgChartTab } from "@/components/attendance/OrgChartTab";
 /**
  * Attendance — staff working hours.
  *
- * Under development and administrator-only. Nothing here reads or writes the
- * plant's reports, Supabase, or any HR system: a first visit loads an invented
- * plant from `src/data/attendance` — staff, departures, timesheets and chart
- * assignments — and everything entered on top of it is kept in the browser's
- * local storage. That is enough to trial the module and is not a backend — one
- * machine, one browser, gone if site data is cleared.
+ * Administrator-only, and live: the staff list, what is booked against them,
+ * the hours they worked and the organisational chart are the plant's own
+ * records in Supabase, through `attendanceSource`. What one supervisor enters
+ * is what everybody else sees.
  *
- * The seam that will eventually carry real data is `attendanceSource`, and
- * swapping it is meant to leave every component on this page untouched.
+ * It does not touch the reports database or any HR system. Attendance stands on
+ * its own, and the reporting pipeline has no dependency on it.
  *
  * Four tabs, in the order the work happens: who the staff are, the day being
  * filled in, the completed days everybody reads figures off, and the chart of
@@ -76,7 +76,7 @@ function useOpenTab(): [string, (value: string) => void] {
 }
 
 export default function AttendancePage() {
-  usePageMeta("Attendance", "Staff working hours — under development");
+  usePageMeta("Attendance", "Staff working hours");
   const sheets = useTimesheets();
   const [tab, setTab] = useOpenTab();
   const [date, setDate] = useState<string | null>(null);
@@ -87,6 +87,10 @@ export default function AttendancePage() {
         <CardContent className="space-y-2 py-10 text-center">
           <p className="font-medium">Could not load attendance</p>
           <p className="text-sm text-muted-foreground">{sheets.error}</p>
+          <Button variant="outline" size="sm" onClick={sheets.reload}>
+            <RefreshCw className="h-4 w-4" />
+            Try again
+          </Button>
         </CardContent>
       </Card>
     );
@@ -108,25 +112,38 @@ export default function AttendancePage() {
 
   return (
     <div className="space-y-4">
-      <MockDataNotice onReset={sheets.reset} />
-
       <Tabs value={tab} onValueChange={setTab}>
         {/* The active tab takes the app's primary colour rather than the
             default plain white card. Both are theme tokens, so the light and
             dark palettes each supply their own pair and the contrast between
             them holds without a second rule here. */}
-        <div className="overflow-x-auto scrollbar-none">
-          <TabsList className="bg-primary/10 dark:bg-primary/[0.14]">
-            {TABS.map((t) => (
-              <TabsTrigger
-                key={t.value}
-                value={t.value}
-                className="text-primary/70 hover:text-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow"
-              >
-                {t.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
+        <div className="flex items-center gap-2">
+          <div className="overflow-x-auto scrollbar-none">
+            <TabsList className="bg-primary/10 dark:bg-primary/[0.14]">
+              {TABS.map((t) => (
+                <TabsTrigger
+                  key={t.value}
+                  value={t.value}
+                  className="text-primary/70 hover:text-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow"
+                >
+                  {t.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
+
+          {/* Somebody else may be entering into the same sheets from the
+              office. Nothing here polls, so this is how you find out. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto text-muted-foreground"
+            disabled={sheets.saving}
+            onClick={sheets.reload}
+          >
+            <RefreshCw className={cn("h-4 w-4", sheets.saving && "animate-spin")} />
+            {sheets.saving ? "Saving" : "Refresh"}
+          </Button>
         </div>
 
         <TabsContent value="employees">

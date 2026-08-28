@@ -12,7 +12,8 @@
     "lint": "eslint .",
     "db:migrate": "node supabase/apply-migrations.mjs",
     "test:admin": "node supabase/test-admin-users.mjs",
-    "test:attendance": "node scripts/test-attendance.mjs"
+    "test:attendance": "node scripts/test-attendance.mjs",
+    "test:attendance-db": "node supabase/test-attendance-db.mjs"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.1",

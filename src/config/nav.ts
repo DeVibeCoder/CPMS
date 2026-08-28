@@ -28,15 +28,14 @@ export const NAV_ITEMS: NavItem[] = [
   // is a tab bar across the top of the section — not a sidebar dropdown.
   { label: "Inventory", to: "/inventory", icon: Boxes, section: "Inventory" },
   { label: "Analytics", to: "/analytics", icon: BarChart3, section: "Reports" },
-  // Under development on mock data and administrator-only until the plant signs
-  // off the working-hour policy — hence both the capability and the badge.
+  // Administrator-only: working hours are staff records, and the plant asked
+  // that they stay with the people who already hold that responsibility.
   {
     label: "Attendance",
     to: "/attendance",
     icon: CalendarClock,
     section: "Staff",
     requires: "attendance",
-    badge: "DEV",
   },
   // Users & Profile are grouped as tabs inside Settings. Everyone can open
   // Settings (viewers land on their Profile tab); admin-only tabs are gated

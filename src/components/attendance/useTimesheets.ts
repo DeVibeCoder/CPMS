@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { attendanceSource } from "@/data/attendance";
+import { HISTORY_DAYS, attendanceSource } from "@/data/attendance";
+import { toast } from "@/hooks/use-toast";
 import {
   entryKey as key,
   reconcileEntries,
   reconcileEntry,
 } from "@/lib/attendance/autoStatus";
+import { addDays, startOfWeek } from "@/lib/attendance/calculations";
 import { PLANT_SECTIONS, normaliseSection } from "@/lib/attendance/sections";
 import {
   departureFromPresence,
@@ -14,7 +16,6 @@ import {
   upper,
   wasEmployedOn,
 } from "@/lib/attendance/staff";
-import { clearState, loadState, saveState } from "@/lib/attendance/storage";
 import type {
   Departure,
   Employee,
@@ -26,29 +27,40 @@ import type { ParsedEmployee } from "@/lib/attendance/employeeCsv";
 /**
  * Holds the timesheets the screens work on.
  *
- * Everything typed in is kept in local storage (see `lib/attendance/storage.ts`)
- * so a staff list survives leaving the page and coming back. It is still not a
- * backend: the data lives on the one machine, in the one browser, and the seam
- * that will eventually carry real data is `attendanceSource`.
+ * The plant's own records, in Supabase. What one supervisor enters is what
+ * everybody else sees — which is the whole difference from the browser-local
+ * working copy this module ran on while its rules were being settled.
  *
- * On a first visit — nothing stored — the sample is loaded so the timesheet and
- * master sheet have something to show.
+ * Every change is applied on screen first and sent immediately after. A
+ * supervisor filling in thirty rows should not wait on a round trip per
+ * keystroke, and the alternative — a Save button — is the thing that loses an
+ * afternoon's work when somebody closes the tab. When a write fails the screen
+ * is reloaded from the backend so that what is on it is true, and a message says
+ * so: silently leaving an unsaved change on screen would be worse than the
+ * error.
  */
+const newId = () =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `dep-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-let departureSeq = 0;
-const newDepartureId = () =>
-  `dep-${Date.now().toString(36)}-${(departureSeq++).toString(36)}`;
+/** How long a burst of typing is allowed to settle before it is sent. */
+const FLUSH_DELAY = 700;
 
 export interface Timesheets {
   loading: boolean;
   error: string | null;
+  /** A change is on its way to the backend. */
+  saving: boolean;
+  /** Re-read everything from the backend. */
+  reload: () => void;
   /**
-   * Everyone the sheets know about — the plant's own staff plus the sample
-   * people, people who have left included. The timesheet and master sheet read
-   * this, because a person leaving must not blank out the weeks they worked.
+   * Everyone the sheets know about — people who have left included. The
+   * timesheet and master sheet read this, because a person leaving must not
+   * blank out the weeks they worked.
    */
   roster: Employee[];
-  /** On the books today. This is the staff list — sample people included. */
+  /** On the books today. This is the staff list. */
   employees: Employee[];
   /** Left the plant. Kept, never deleted. */
   inactive: Employee[];
@@ -99,7 +111,7 @@ export interface Timesheets {
    * actually leaves gets an exit date, which keeps their history.
    */
   removeEmployee: (employeeId: string) => void;
-  /** Delete everybody, sample and all. For clearing test data. */
+  /** Delete the whole staff list. */
   removeAllEmployees: () => void;
   /** Book a spell away or an exit, now or for a date weeks off. */
   addDeparture: (departure: Omit<Departure, "id">) => { error?: string };
@@ -108,102 +120,159 @@ export interface Timesheets {
   chart: Record<string, string>;
   /** Put somebody in a post, or empty it with null. */
   assignSlot: (slotId: string, employeeId: string | null) => void;
-  /** Throw the working copy away and reload the sample. */
-  reset: () => void;
   /** Dates with at least one entry, newest first. */
   dates: string[];
 }
 
+/** Whether a stored row and an on-screen row say the same thing. */
+function same(a: TimesheetEntry, b: TimesheetEntry): boolean {
+  return (
+    a.status === b.status &&
+    (a.start ?? "") === (b.start ?? "") &&
+    (a.end ?? "") === (b.end ?? "") &&
+    (a.remarks ?? "") === (b.remarks ?? "") &&
+    Boolean(a.auto) === Boolean(b.auto) &&
+    JSON.stringify(a.breaks ?? []) === JSON.stringify(b.breaks ?? [])
+  );
+}
+
+const message = (e: unknown) =>
+  e instanceof Error ? e.message : "Something went wrong.";
+
 export function useTimesheets(): Timesheets {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [roster, setRoster] = useState<Employee[]>([]);
   const [departures, setDepartures] = useState<Departure[]>([]);
-  const [weekStarts, setWeekStarts] = useState<string[]>([]);
-  const [months, setMonths] = useState<string[]>([]);
   const [entries, setEntries] = useState<Map<string, TimesheetEntry>>(new Map());
   const [submitted, setSubmitted] = useState<Set<string>>(new Set());
   const [chart, setChart] = useState<Record<string, string>>({});
 
   const today = attendanceSource.today();
+  const since = useMemo(() => addDays(today, -HISTORY_DAYS), [today]);
+
+  /**
+   * What the backend is believed to hold.
+   *
+   * Timesheet rows are not saved by their call sites. They are changed from four
+   * places — typing, the automatic status rule, opening a day, importing a list
+   * — and threading a save through each was four chances to miss one. Instead
+   * the flush below compares the rows on screen against this and sends the
+   * difference, so a row cannot be changed without being saved.
+   */
+  const savedRef = useRef<Map<string, TimesheetEntry>>(new Map());
+  const entriesRef = useRef(entries);
+  entriesRef.current = entries;
+
+  const load = useCallback(async () => {
+    const [people, bookings, rows, done, posts] = await Promise.all([
+      attendanceSource.listEmployees(),
+      attendanceSource.listDepartures(),
+      attendanceSource.listEntries(since, today),
+      attendanceSource.listSubmittedDates(since, today),
+      attendanceSource.listChart(),
+    ]);
+    const byKey = new Map(rows.map((r) => [key(r.employeeId, r.date), r]));
+    setRoster(people);
+    setDepartures(bookings);
+    setEntries(byKey);
+    setSubmitted(new Set(done));
+    setChart(posts);
+    savedRef.current = new Map(byKey);
+  }, [since, today]);
 
   useEffect(() => {
     let cancelled = false;
-
-    async function load() {
-      try {
-        // The week and month lists come from the sample either way: they are
-        // the periods the master sheet offers, not anybody's data.
-        const [weeks, monthList] = await Promise.all([
-          attendanceSource.listWeekStarts(),
-          attendanceSource.listMonths(),
-        ]);
-        if (cancelled) return;
-        setWeekStarts(weeks);
-        setMonths(monthList);
-
-        const stored = loadState();
-        if (stored) {
-          setRoster(stored.employees);
-          setDepartures(stored.departures);
-          setEntries(
-            new Map(stored.entries.map((r) => [key(r.employeeId, r.date), r])),
-          );
-          setSubmitted(new Set(stored.submitted));
-          setChart(stored.chart ?? {});
-          return;
-        }
-
-        // A first visit gets the whole sample plant, not just its timesheets:
-        // the staff list, what is booked against them, and who holds which post.
-        // Every screen in the module reads one of those three, so seeding only
-        // the sheets left half the tabs blank with nothing to look at.
-        const [people, bookings, rows, done, posts] = await Promise.all([
-          attendanceSource.listEmployees(),
-          attendanceSource.listDepartures(),
-          attendanceSource.listEntries(),
-          attendanceSource.listSubmittedDates(),
-          attendanceSource.listChart(),
-        ]);
-        if (cancelled) return;
-        setRoster(people);
-        setDepartures(bookings);
-        setEntries(new Map(rows.map((r) => [key(r.employeeId, r.date), r])));
-        setSubmitted(new Set(done));
-        setChart(posts);
-      } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Could not load attendance.");
-        }
-      } finally {
+    setLoading(true);
+    load()
+      .catch((e) => {
+        if (!cancelled) setError(message(e));
+      })
+      .finally(() => {
         if (!cancelled) setLoading(false);
-      }
-    }
-
-    void load();
+      });
     return () => {
       cancelled = true;
     };
+  }, [load]);
+
+  const reload = useCallback(() => {
+    setError(null);
+    void load().catch((e) => setError(message(e)));
+  }, [load]);
+
+  /**
+   * Run a change against the backend, and put the screen back if it fails.
+   *
+   * Reloading rather than reversing the one change: by the time a write fails
+   * the screen may have moved on, and the only state that is certainly right is
+   * the one the backend holds.
+   */
+  const run = useCallback(
+    async (what: () => Promise<void>, failed: string) => {
+      setSaving(true);
+      try {
+        await what();
+      } catch (e) {
+        toast({
+          variant: "destructive",
+          title: failed,
+          description: `${message(e)} The screen has been reloaded.`,
+        });
+        await load().catch(() => setError("Attendance could not be reloaded."));
+      } finally {
+        setSaving(false);
+      }
+    },
+    [load],
+  );
+
+  /**
+   * Send whatever the rows on screen say that the stored ones do not.
+   *
+   * Debounced, because the alternative is a round trip for every character typed
+   * into a remarks box.
+   */
+  const flush = useCallback(async () => {
+    const current = entriesRef.current;
+    const saved = savedRef.current;
+
+    const changed: TimesheetEntry[] = [];
+    for (const [id, entry] of current) {
+      const before = saved.get(id);
+      if (!before || !same(before, entry)) changed.push(entry);
+    }
+    const gone: { employeeId: string; date: string }[] = [];
+    for (const [id, entry] of saved) {
+      if (!current.has(id)) {
+        gone.push({ employeeId: entry.employeeId, date: entry.date });
+      }
+    }
+    if (changed.length === 0 && gone.length === 0) return;
+
+    // Taken before the awaits: anything typed while they are in flight belongs
+    // to the next flush, not to this one.
+    const sent = new Map(current);
+    await attendanceSource.saveEntries(changed);
+    await attendanceSource.removeEntries(gone);
+    savedRef.current = sent;
   }, []);
 
-  // Save on every change, but never during the first load — writing the sample
-  // straight back out would turn "I have not used this yet" into stored state
-  // and take away the reset the first visit gives for free.
-  const hydrated = useRef(false);
   useEffect(() => {
     if (loading) return;
-    if (!hydrated.current) {
-      hydrated.current = true;
-      return;
-    }
-    saveState({
-      employees: roster,
-      departures,
-      entries: [...entries.values()],
-      submitted: [...submitted],
-      chart,
-    });
-  }, [loading, roster, departures, entries, submitted, chart]);
+    const timer = window.setTimeout(() => {
+      void run(flush, "The timesheet could not be saved");
+    }, FLUSH_DELAY);
+    return () => window.clearTimeout(timer);
+  }, [entries, loading, flush, run]);
+
+  /** Forget rows the database has already removed, so no delete is sent. */
+  const forgetSaved = useCallback((doomed: (entry: TimesheetEntry) => boolean) => {
+    const next = new Map(savedRef.current);
+    for (const [id, entry] of savedRef.current) if (doomed(entry)) next.delete(id);
+    savedRef.current = next;
+  }, []);
 
   const entryFor = useCallback(
     (employeeId: string, date: string) => entries.get(key(employeeId, date)),
@@ -272,10 +341,9 @@ export function useTimesheets(): Timesheets {
         // flag on would let a later reconciliation delete what they had just
         // entered. A remark is not that — while a departure covers the day it is
         // the only field still enabled, and writing one is not a claim on the
-        // day's status. Status itself never arrives here any more; it is settled
-        // entirely by `lib/attendance/autoStatus.ts`.
-        const claimed =
-          "start" in patch || "end" in patch || "breaks" in patch;
+        // day's status. Status itself never arrives here; it is settled entirely
+        // by `lib/attendance/autoStatus.ts`.
+        const claimed = "start" in patch || "end" in patch || "breaks" in patch;
         next.set(id, {
           ...existing,
           ...patch,
@@ -301,49 +369,57 @@ export function useTimesheets(): Timesheets {
       const existing = new Map(roster.map((e) => [e.id.toUpperCase(), e]));
       const added = people.filter((p) => !existing.has(p.id.toUpperCase())).length;
 
-      setRoster(() => {
-        const merged = new Map(existing);
-        for (const person of people) {
-          const key = upper(person.id);
-          const before = merged.get(key);
-          // Stored upper case whatever the file used, so an HR export in title
-          // case and a hand-typed row end up as one spelling.
-          merged.set(key, {
-            id: before?.id ?? key,
-            name: upper(person.name),
-            position: upper(person.position),
-            department: normaliseSection(person.department),
-            // Whatever this row was, somebody has now put a real person on it.
-            sample: undefined,
-          });
-        }
-        return [...merged.values()].sort((a, b) => a.id.localeCompare(b.id));
-      });
+      const merged = new Map(existing);
+      for (const person of people) {
+        const id = upper(person.id);
+        const before = merged.get(id);
+        // Stored upper case whatever the file used, so an HR export in title
+        // case and a hand-typed row end up as one spelling.
+        merged.set(id, {
+          id: before?.id ?? id,
+          name: upper(person.name),
+          position: upper(person.position),
+          department: normaliseSection(person.department),
+        });
+      }
+      const next = [...merged.values()].sort((a, b) => a.id.localeCompare(b.id));
 
       // A file says where people are now. That replaces any open spell away it
       // contradicts, but leaves booked exits alone — the file has no column for
       // them, so it cannot be read as cancelling one.
+      const touched = people.map(
+        (p) => existing.get(p.id.toUpperCase())?.id ?? upper(p.id),
+      );
+      const fresh = people
+        .map((p) =>
+          departureFromPresence(
+            existing.get(p.id.toUpperCase())?.id ?? upper(p.id),
+            p.presence,
+            today,
+            newId(),
+          ),
+        )
+        .filter((d): d is Departure => Boolean(d));
+
+      setRoster(next);
       setDepartures((current) => {
-        const touched = new Set(people.map((p) => p.id.toUpperCase()));
-        const kept = current.filter(
-          (d) => d.type === "exit" || !touched.has(d.employeeId.toUpperCase()),
-        );
-        const fresh = people
-          .map((p) =>
-            departureFromPresence(
-              existing.get(p.id.toUpperCase())?.id ?? p.id,
-              p.presence,
-              today,
-              newDepartureId(),
-            ),
-          )
-          .filter((d): d is Departure => Boolean(d));
-        return [...kept, ...fresh];
+        const replaced = new Set(touched);
+        return [
+          ...current.filter(
+            (d) => d.type === "exit" || !replaced.has(d.employeeId),
+          ),
+          ...fresh,
+        ];
       });
+
+      void run(async () => {
+        await attendanceSource.saveEmployees(next);
+        await attendanceSource.replacePresence(touched, fresh);
+      }, "The staff list could not be imported");
 
       return { added, updated: people.length - added };
     },
-    [roster, today],
+    [roster, today, run],
   );
 
   /**
@@ -372,79 +448,103 @@ export function useTimesheets(): Timesheets {
       setRoster((current) =>
         [...current, normalised].sort((a, b) => a.id.localeCompare(b.id)),
       );
+      void run(
+        () => attendanceSource.saveEmployee(normalised),
+        `${normalised.name} could not be added`,
+      );
       return {};
     },
-    [roster],
+    [roster, run],
   );
 
   /** Correct a row. The staff number is the key, so it is not editable. */
   const updateEmployee = useCallback(
     (employeeId: string, patch: Partial<Employee>) => {
+      let saved: Employee | undefined;
       setRoster((current) =>
-        current.map((e) =>
-          e.id === employeeId
-            ? {
-                ...e,
-                ...patch,
-                id: e.id,
-                name: patch.name === undefined ? e.name : upper(patch.name),
-                position:
-                  patch.position === undefined ? e.position : upper(patch.position),
-                department:
-                  patch.department === undefined
-                    ? e.department
-                    : normaliseSection(patch.department),
-              }
-            : e,
-        ),
+        current.map((e) => {
+          if (e.id !== employeeId) return e;
+          saved = {
+            ...e,
+            ...patch,
+            id: e.id,
+            name: patch.name === undefined ? e.name : upper(patch.name),
+            position:
+              patch.position === undefined ? e.position : upper(patch.position),
+            department:
+              patch.department === undefined
+                ? e.department
+                : normaliseSection(patch.department),
+          };
+          return saved;
+        }),
       );
+      if (saved) {
+        const row = saved;
+        void run(
+          () => attendanceSource.saveEmployee(row),
+          `${row.name} could not be saved`,
+        );
+      }
     },
-    [],
+    [run],
   );
 
   /**
    * Delete somebody outright.
    *
-   * Their departures and timesheet rows go with them: leaving those behind
-   * would leave hours keyed to a staff number nothing can resolve, which is
-   * worse than losing them. This is the "entered by mistake" path — a person
-   * who genuinely leaves gets an exit date instead, and keeps their history.
+   * Their departures, timesheet rows and chart post go with them — the database
+   * cascades all three, because hours keyed to a staff number nothing can
+   * resolve are worse than losing them. This is the "entered by mistake" path; a
+   * person who genuinely leaves gets an exit date and keeps their history.
    */
-  const removeEmployee = useCallback((employeeId: string) => {
-    setRoster((current) => current.filter((e) => e.id !== employeeId));
-    setDepartures((current) =>
-      current.filter((d) => d.employeeId !== employeeId),
-    );
-    setEntries((current) => {
-      const next = new Map(current);
-      for (const [k, v] of current) if (v.employeeId === employeeId) next.delete(k);
-      return next;
-    });
-    // Their post goes back to vacant. Left behind, the assignment would hold a
-    // staff number nothing resolves — a box reading VACANT that the chart still
-    // counted as taken, so nobody could be put in it.
-    setChart((current) => {
-      const held = Object.entries(current).find(([, id]) => id === employeeId);
-      if (!held) return current;
-      const next = { ...current };
-      delete next[held[0]];
-      return next;
-    });
-  }, []);
+  const removeEmployee = useCallback(
+    (employeeId: string) => {
+      setRoster((current) => current.filter((e) => e.id !== employeeId));
+      setDepartures((current) =>
+        current.filter((d) => d.employeeId !== employeeId),
+      );
+      setEntries((current) => {
+        const next = new Map(current);
+        for (const [k, v] of current) if (v.employeeId === employeeId) next.delete(k);
+        return next;
+      });
+      setChart((current) => {
+        const held = Object.entries(current).find(([, id]) => id === employeeId);
+        if (!held) return current;
+        const next = { ...current };
+        delete next[held[0]];
+        return next;
+      });
+      // The cascade has already taken their rows, so the flush must not go
+      // looking for them.
+      forgetSaved((entry) => entry.employeeId === employeeId);
+      void run(
+        () => attendanceSource.removeEmployee(employeeId),
+        "The employee could not be removed",
+      );
+    },
+    [run, forgetSaved],
+  );
 
   /**
-   * Clear the whole staff list — the sample people included.
+   * Clear the whole staff list.
    *
-   * This is how a plant starts on its own data, so leaving the invented crew
-   * behind would defeat it: the point is an empty list to import into. "Reset to
-   * sample" brings them all back, so nothing is lost that cannot be had again.
+   * How a plant starts again on a corrected list. Everything keyed to those
+   * people goes with them — the database cascades their departures, timesheets
+   * and chart posts.
    */
   const removeAllEmployees = useCallback(() => {
     setRoster([]);
     setDepartures([]);
     setEntries(new Map());
     setChart({});
-  }, []);
+    savedRef.current = new Map();
+    void run(
+      () => attendanceSource.removeAllEmployees(),
+      "The staff list could not be cleared",
+    );
+  }, [run]);
 
   const addDeparture = useCallback(
     (departure: Omit<Departure, "id">): { error?: string } => {
@@ -453,29 +553,31 @@ export function useTimesheets(): Timesheets {
       if (departure.to && departure.to < departure.from) {
         return { error: "The To date is before the From date." };
       }
-      setDepartures((current) => [
-        { ...departure, id: newDepartureId() },
-        ...current,
-      ]);
+      const row: Departure = { ...departure, id: newId() };
+      setDepartures((current) => [row, ...current]);
+      void run(
+        () => attendanceSource.saveDeparture(row),
+        "The departure could not be saved",
+      );
       return {};
     },
-    [],
+    [run],
   );
 
   const removeDeparture = useCallback(
-    (id: string) => setDepartures((current) => current.filter((d) => d.id !== id)),
-    [],
+    (id: string) => {
+      setDepartures((current) => current.filter((d) => d.id !== id));
+      void run(
+        () => attendanceSource.removeDeparture(id),
+        "The departure could not be removed",
+      );
+    },
+    [run],
   );
 
   // The staff list and the inactive list are read off the roster against
   // today's date rather than stored, so somebody whose last day has arrived
   // moves across on their own. See `lib/attendance/staff.ts`.
-  //
-  // The sample people are on both lists like anybody else. They used to be
-  // hidden here so a plant would find an empty staff list, but that left every
-  // screen that reads the staff list — Status, History, the org chart — blank on
-  // first open, with no way to see what any of them do. A sample plant that can
-  // be cleared in one click is more use than an empty one.
   const employees = useMemo(
     () => roster.filter((e) => !hasExited(departures, e.id, today)),
     [roster, departures, today],
@@ -510,27 +612,30 @@ export function useTimesheets(): Timesheets {
    *
    * One post each way: assigning somebody who already holds another post moves
    * them, rather than putting one person in two boxes. A chart that let that
-   * happen would report a headcount the plant does not have.
+   * happen would report a headcount the plant does not have — which is why the
+   * table carries the same rule as a unique constraint.
    */
-  const assignSlot = useCallback((slotId: string, employeeId: string | null) => {
-    setChart((current) => {
-      const next = { ...current };
-      if (!employeeId) {
-        delete next[slotId];
+  const assignSlot = useCallback(
+    (slotId: string, employeeId: string | null) => {
+      setChart((current) => {
+        const next = { ...current };
+        if (!employeeId) {
+          delete next[slotId];
+          return next;
+        }
+        for (const [id, held] of Object.entries(next)) {
+          if (held === employeeId) delete next[id];
+        }
+        next[slotId] = employeeId;
         return next;
-      }
-      for (const [id, held] of Object.entries(next)) {
-        if (held === employeeId) delete next[id];
-      }
-      next[slotId] = employeeId;
-      return next;
-    });
-  }, []);
-
-  const reset = useCallback(() => {
-    clearState();
-    window.location.reload();
-  }, []);
+      });
+      void run(
+        () => attendanceSource.assignSlot(slotId, employeeId),
+        "The post could not be assigned",
+      );
+    },
+    [run],
+  );
 
   const dates = useMemo(
     () =>
@@ -540,9 +645,52 @@ export function useTimesheets(): Timesheets {
     [entries],
   );
 
+  // The periods the master sheet offers are the periods there is something to
+  // read, so they are derived from the sheets rather than declared anywhere.
+  const weekStarts = useMemo(
+    () => [...new Set(dates.map(startOfWeek))].sort((a, b) => b.localeCompare(a)),
+    [dates],
+  );
+
+  const months = useMemo(
+    () =>
+      [...new Set(dates.map((d) => `${d.slice(0, 7)}-01`))].sort((a, b) =>
+        b.localeCompare(a),
+      ),
+    [dates],
+  );
+
+  const submitDate = useCallback(
+    (date: string) => {
+      setSubmitted((current) => new Set(current).add(date));
+      void run(
+        () => attendanceSource.submitDate(date),
+        "The day could not be completed",
+      );
+    },
+    [run],
+  );
+
+  const reopenDate = useCallback(
+    (date: string) => {
+      setSubmitted((current) => {
+        const next = new Set(current);
+        next.delete(date);
+        return next;
+      });
+      void run(
+        () => attendanceSource.reopenDate(date),
+        "The day could not be reopened",
+      );
+    },
+    [run],
+  );
+
   return {
     loading,
     error,
+    saving,
+    reload,
     roster,
     employees,
     inactive,
@@ -557,14 +705,8 @@ export function useTimesheets(): Timesheets {
     syncDay,
     updateEntry,
     isSubmitted,
-    submitDate: (date: string) =>
-      setSubmitted((current) => new Set(current).add(date)),
-    reopenDate: (date: string) =>
-      setSubmitted((current) => {
-        const next = new Set(current);
-        next.delete(date);
-        return next;
-      }),
+    submitDate,
+    reopenDate,
     presence,
     importEmployees,
     addEmployee,
@@ -575,7 +717,6 @@ export function useTimesheets(): Timesheets {
     removeDeparture,
     chart,
     assignSlot,
-    reset,
     dates,
   };
 }

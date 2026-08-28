@@ -29,9 +29,9 @@ export const PERMISSIONS = {
     createReports: true,
     editReports: true,
     exportPdf: true,
-    // Attendance is under development and runs on mock data. Administrator-only
-    // until the plant signs off the working-hour policy and it is connected to
-    // real staff records.
+    // Working hours are staff records. Administrator-only by the plant's own
+    // decision, and the row-level security on the attendance tables says the
+    // same thing where a REST client cannot get round it.
     attendance: true,
   },
   // Can create, edit and generate (print/export) reports — but not delete,
