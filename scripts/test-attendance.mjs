@@ -15,9 +15,7 @@ import {
   formatDuration,
   formatShort,
   monthDates,
-  digitRunAt,
   formatDayMonthYear,
-  maskDayMonthYear,
   parseDayMonthYear,
   parseTime,
   parseTyped,
@@ -906,53 +904,109 @@ test("a date is read and shown the way the plant writes it", () => {
   assert.equal(formatDayMonthYear("2026-01-05"), "05/01/2026");
 });
 
-test("the separators appear as the digits are typed", () => {
-  // One keystroke at a time, as somebody actually enters 25/12/2026.
-  const typed = ["2", "25", "251", "2512", "25122", "251220", "2512202", "25122026"];
-  assert.deepEqual(
-    typed.map(maskDayMonthYear),
-    ["2", "25/", "25/1", "25/12/", "25/12/2", "25/12/20", "25/12/202", "25/12/2026"],
-  );
+// -----------------------------------------------------------------------------
+// The date field, as eight boxes and two fixed slashes.
+//
+// Everything the field does is here, so it can be checked by running it rather
+// than by clicking it: eight digits fill it, backspace empties it right to left,
+// and the slashes never move because they are not part of what is typed.
+// -----------------------------------------------------------------------------
+const {
+  dateFrom, deleteBack, isBlank, render, segmentAt, segmentRange, slotsFor, step, typeDigit,
+} = await import("../src/lib/attendance/dateMask.ts");
+
+console.log("\nDate field");
+
+/** Type a string of digits into an empty field, one key at a time. */
+function typeAll(digits) {
+  let state = { slots: slotsFor(""), segment: 0, cursor: 0 };
+  const seen = [];
+  for (const digit of digits) {
+    state = typeDigit(state.slots, state.segment, state.cursor, digit);
+    seen.push(render(state.slots));
+  }
+  return { state, seen };
+}
+
+test("the field shows its shape before anything is typed", () => {
+  assert.equal(render(slotsFor("")), "dd/mm/yyyy");
+  assert.ok(isBlank(slotsFor("")));
 });
 
-test("typing the separators anyway does not double them", () => {
-  assert.equal(maskDayMonthYear("25/"), "25/");
-  assert.equal(maskDayMonthYear("25/12/2026"), "25/12/2026");
-  assert.equal(maskDayMonthYear("25-12-2026"), "25/12/2026");
+test("eight digits fill it, and the caret walks day to month to year", () => {
+  const { seen } = typeAll("25122026");
+  assert.deepEqual(seen, [
+    "2d/mm/yyyy",
+    "25/mm/yyyy",
+    "25/1m/yyyy",
+    "25/12/yyyy",
+    "25/12/2yyy",
+    "25/12/20yy",
+    "25/12/202y",
+    "25/12/2026",
+  ]);
 });
 
-test("more digits than a date has are not accepted", () => {
-  assert.equal(maskDayMonthYear("251220261234"), "25/12/2026");
+test("filling a segment moves to the next one on its own", () => {
+  let s = typeAll("25").state;
+  assert.equal(s.segment, 1, "the day being full moves to the month");
+  assert.equal(s.cursor, 0);
+  s = typeAll("2512").state;
+  assert.equal(s.segment, 2, "the month being full moves to the year");
 });
 
-test("clicking a date segment selects the whole of it", () => {
-  const date = "25/12/2026";
-  const run = (caret) => digitRunAt(date, caret);
-
-  // Anywhere in the day, including either edge of it.
-  assert.deepEqual(run(0), [0, 2]);
-  assert.deepEqual(run(1), [0, 2]);
-  assert.deepEqual(run(2), [0, 2]);
-  // The month.
-  assert.deepEqual(run(3), [3, 5]);
-  assert.deepEqual(run(4), [3, 5]);
-  assert.deepEqual(run(5), [3, 5]);
-  // The year, all four digits of it, from anywhere inside.
-  assert.deepEqual(run(6), [6, 10]);
-  assert.deepEqual(run(8), [6, 10]);
-  assert.deepEqual(run(10), [6, 10]);
+test("a ninth digit is dropped rather than rewriting a finished date", () => {
+  const { state } = typeAll("251220269");
+  assert.equal(render(state.slots), "25/12/2026");
 });
 
-test("a half-typed date still selects by segment", () => {
-  assert.deepEqual(digitRunAt("25/1", 4), [3, 4], "one digit is still the month");
-  assert.deepEqual(digitRunAt("5", 0), [0, 1]);
-  assert.deepEqual(digitRunAt("25/12/20", 7), [6, 8], "two digits of a year");
+test("the completed date is handed up, and a partial one is not", () => {
+  assert.equal(dateFrom(typeAll("25122026").state.slots), "2026-12-25");
+  assert.equal(dateFrom(typeAll("2512").state.slots), "", "half a date is not a date");
+  assert.equal(dateFrom(typeAll("31022026").state.slots), "", "31 February is not a day");
 });
 
-test("with nothing to select the caret is left where it is", () => {
-  assert.equal(digitRunAt("", 0), null);
-  assert.equal(digitRunAt("25/12/", 6), null, "past the last digit typed");
-  assert.equal(digitRunAt("//", 1), null);
+test("backspace empties it right to left, across the slashes", () => {
+  let state = typeAll("25122026").state;
+  const seen = [];
+  for (let i = 0; i < 9; i += 1) {
+    state = deleteBack(state.slots, state.segment, state.cursor);
+    seen.push(render(state.slots));
+  }
+  assert.deepEqual(seen.slice(0, 5), [
+    "25/12/202y",
+    "25/12/20yy",
+    "25/12/2yyy",
+    "25/12/yyyy",
+    "25/1m/yyyy",
+  ]);
+  // It stops at the beginning rather than running off it.
+  assert.equal(render(state.slots), "dd/mm/yyyy");
+  assert.ok(isBlank(state.slots));
+});
+
+test("clicking anywhere in a segment picks that segment", () => {
+  assert.deepEqual([0, 1, 2].map(segmentAt), [0, 0, 0], "the day, and the slash after it");
+  assert.deepEqual([3, 4, 5].map(segmentAt), [1, 1, 1], "the month");
+  assert.deepEqual([6, 8, 10].map(segmentAt), [2, 2, 2], "the year");
+});
+
+test("a picked segment is selected whole, so a digit replaces it", () => {
+  assert.deepEqual(segmentRange(0), [0, 2]);
+  assert.deepEqual(segmentRange(1), [3, 5]);
+  assert.deepEqual(segmentRange(2), [6, 10]);
+});
+
+test("arrows step between segments and stop at the ends", () => {
+  assert.equal(step(0, -1), 0);
+  assert.equal(step(0, 1), 1);
+  assert.equal(step(2, 1), 2);
+});
+
+test("a stored date opens the field already filled", () => {
+  assert.equal(render(slotsFor("2026-12-25")), "25/12/2026");
+  assert.equal(render(slotsFor("")), "dd/mm/yyyy");
+  assert.equal(dateFrom(slotsFor("2026-12-25")), "2026-12-25");
 });
 
 test("a date round-trips through both directions unchanged", () => {

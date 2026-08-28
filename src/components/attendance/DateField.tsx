@@ -1,33 +1,41 @@
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { ClipboardEvent, KeyboardEvent, MouseEvent } from "react";
+
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
-  digitRunAt,
-  formatDayMonthYear,
-  maskDayMonthYear,
-  parseDayMonthYear,
-} from "@/lib/attendance/calculations";
+  DATE_SEGMENTS,
+  dateFrom,
+  deleteBack,
+  isBlank,
+  render,
+  segmentAt,
+  segmentRange,
+  slotsFor,
+  step,
+  typeDigit,
+} from "@/lib/attendance/dateMask";
 
 /**
  * A date, typed, in the order the plant writes it: 25/12/2026.
  *
- * Deliberately not `<input type="date">`, for the same reason `TimeField` is not
- * `<input type="time">`. That control renders in the machine's locale, so the
- * same field shows 03/12 to one clerk and 12/03 to the next with nothing on
- * screen to say which — and between a day in March and a day in December that is
- * not a cosmetic difference. It is worse here than for times, because a misread
- * time looks wrong and a misread date does not.
+ * Deliberately not `<input type="date">`. That control renders in the machine's
+ * locale, so the same field shows 03/12 to one clerk and 12/03 to the next with
+ * nothing on screen to say which — and between a day in March and a day in
+ * December that is not a cosmetic difference. Unlike a misread time, a misread
+ * date does not look wrong.
  *
- * What the native control does get right is that you type digits and it deals
- * with the rest: separators appear on their own, and clicking the month selects
- * the month so the next keystroke replaces it. Both are worth keeping and both
- * are kept — see `onType` and `onSelectSegment`. Giving up the locale problem
- * was the point; giving up the editing behaviour with it was not.
+ * Everything else about the native control is worth having, and this has it: the
+ * slashes are part of the field rather than something to type, the day is
+ * selected when you click the day, and filling one segment moves to the next. So
+ * a date is eight digits and nothing else. What it will not do is the one thing
+ * that made it unusable here.
  *
- * An unreadable date is left on screen to be corrected rather than being
- * discarded or rounded to something real, and the field says so in red. What
- * counts as readable lives in `calculations.ts` beside the rest of the date
- * handling, and is tested there.
+ * The field is driven from key presses rather than from its own text, and the
+ * rules live in `lib/attendance/dateMask.ts` where they are tested. Letting the
+ * text be edited directly is where masked fields come apart — deleting a
+ * separator means re-deriving the digits from a string that no longer has a
+ * fixed shape, and they shuffle.
  */
 export function DateField({
   value,
@@ -46,64 +54,116 @@ export function DateField({
   "aria-label"?: string;
 }) {
   const ref = useRef<HTMLInputElement>(null);
-  const [text, setText] = useState(() => (value ? formatDayMonthYear(value) : ""));
+  const [slots, setSlots] = useState(() => slotsFor(value));
+  const [segment, setSegment] = useState(0);
+  const [cursor, setCursor] = useState(0);
+  const [focused, setFocused] = useState(false);
 
   // Follow the stored value when it changes underneath — the form was reset, or
-  // the date was set from somewhere else.
+  // the date was set from somewhere else. Not while it is being typed into: the
+  // half-finished date on screen is the truth then, and the stored value is
+  // empty precisely because it is half finished.
   useEffect(() => {
-    setText(value ? formatDayMonthYear(value) : "");
-  }, [value]);
+    if (!focused) setSlots(slotsFor(value));
+  }, [value, focused]);
 
-  const commit = () => {
-    if (!text.trim()) {
-      setText("");
-      onChange("");
+  /**
+   * Keep the active segment highlighted.
+   *
+   * Done after every render rather than in the handlers, because the browser
+   * moves the caret on its own — after a click, and after React writes the value
+   * — and a selection set before that is gone by the time anybody sees it.
+   */
+  useLayoutEffect(() => {
+    const field = ref.current;
+    if (!field || !focused) return;
+    const [from, to] = segmentRange(segment);
+    if (field.selectionStart !== from || field.selectionEnd !== to) {
+      field.setSelectionRange(from, to);
+    }
+  });
+
+  /** Hand the date up as soon as it is one, and take it back when it is not. */
+  const publish = (next: string[]) => {
+    const iso = dateFrom(next);
+    if (iso !== value) onChange(iso);
+  };
+
+  const apply = (result: {
+    slots: string[];
+    segment: number;
+    cursor: number;
+  }) => {
+    setSlots(result.slots);
+    setSegment(result.segment);
+    setCursor(result.cursor);
+    publish(result.slots);
+  };
+
+  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+    if (/^\d$/.test(event.key)) {
+      event.preventDefault();
+      apply(typeDigit(slots, segment, cursor, event.key));
       return;
     }
-    const iso = parseDayMonthYear(text);
-    if (iso) {
-      setText(formatDayMonthYear(iso));
-      onChange(iso);
+
+    switch (event.key) {
+      case "Backspace":
+      case "Delete":
+        event.preventDefault();
+        apply(deleteBack(slots, segment, cursor));
+        return;
+      case "ArrowLeft":
+      case "ArrowRight":
+        event.preventDefault();
+        setSegment(step(segment, event.key === "ArrowLeft" ? -1 : 1));
+        setCursor(0);
+        return;
+      case "ArrowUp":
+      case "ArrowDown":
+        // Nothing to step through — a date field is not a spinner here.
+        event.preventDefault();
+        return;
+      default:
+        // Tab, Enter, Escape and the rest belong to the form, not to this.
+        if (event.key.length === 1) event.preventDefault();
     }
-    // Unreadable: leave it on screen so it can be corrected.
   };
 
   /**
-   * Take what was typed, and put the separators in.
+   * Take a pasted date, if it holds one.
    *
-   * Only when the edit is an append at the end of the field. Anywhere else — a
-   * segment replaced, a digit deleted from the middle — the text is taken as it
-   * comes, because re-deriving it from the digits would repack them: replace the
-   * month in 25/12/2026 with a single 7 and 25/7/2026 would be rebuilt as
-   * 25/72/026. The parser is content with 25/7/2026, so there is nothing to fix
-   * and every reason not to try.
+   * Its digits are poured into the boxes from the start, so 25/12/2026 and
+   * 25-12-2026 and 25122026 all land the same way. Anything that does not fill
+   * the field is dropped rather than half-applied — a date field holding four of
+   * somebody's eight digits is worse than one that ignored them.
    */
-  const onType = (event: ChangeEvent<HTMLInputElement>) => {
-    const typed = event.target.value;
-    const appended =
-      typed.length > text.length &&
-      event.target.selectionStart === typed.length;
-    setText(appended ? maskDayMonthYear(typed) : typed);
+  const onPaste = (event: ClipboardEvent<HTMLInputElement>) => {
+    event.preventDefault();
+    const digits = event.clipboardData.getData("text").replace(/[^\d]/g, "");
+    if (digits.length !== 8) return;
+
+    const pasted = [...digits];
+    setSlots(pasted);
+    setSegment(DATE_SEGMENTS.length - 1);
+    setCursor(DATE_SEGMENTS[DATE_SEGMENTS.length - 1].length);
+    publish(pasted);
   };
 
-  /**
-   * Select the whole day, month or year the caret landed in.
-   *
-   * Skipped when the selection is not collapsed, because that is somebody
-   * dragging out a selection of their own and taking it off them would be
-   * worse than not helping at all.
-   */
-  const onSelectSegment = () => {
-    const field = ref.current;
-    if (!field || field.disabled) return;
-    const { selectionStart, selectionEnd } = field;
-    if (selectionStart === null || selectionStart !== selectionEnd) return;
-
-    const run = digitRunAt(field.value, selectionStart);
-    if (run) field.setSelectionRange(run[0], run[1]);
+  /** Clicking anywhere in a segment takes the whole segment. */
+  const onPick = (event: MouseEvent<HTMLInputElement>) => {
+    const caret = event.currentTarget.selectionStart ?? 0;
+    const picked = segmentAt(caret);
+    setSegment(picked);
+    setCursor(0);
   };
 
-  const unreadable = Boolean(text.trim()) && parseDayMonthYear(text) === null;
+  // An empty field left alone shows nothing rather than a skeleton nobody has
+  // touched — the placeholder says what to type. It fills in the moment it is
+  // used, and stays filled while it holds anything at all.
+  const showMask = focused || !isBlank(slots);
 
   return (
     <Input
@@ -111,23 +171,26 @@ export function DateField({
       id={id}
       type="text"
       inputMode="numeric"
-      maxLength={10}
       placeholder="dd/mm/yyyy"
       aria-label={ariaLabel}
       disabled={disabled}
-      value={text}
-      onChange={onType}
-      // `mouseUp`, not `click`: the browser places the caret between the two, so
-      // this is the first moment there is a caret position worth reading.
-      onMouseUp={onSelectSegment}
-      onFocus={onSelectSegment}
-      onBlur={commit}
-      onKeyDown={(e) => e.key === "Enter" && commit()}
-      className={cn(
-        "tabular-nums",
-        unreadable && "border-destructive text-destructive",
-        className,
-      )}
+      value={showMask ? render(slots) : ""}
+      // Every change comes from a key press or a paste. Anything else that
+      // reaches the DOM value — a drag-and-drop, an autofill — is put straight
+      // back, so the boxes and what is on screen cannot drift apart.
+      onChange={(e) => {
+        e.currentTarget.value = showMask ? render(slots) : "";
+      }}
+      onPaste={onPaste}
+      onKeyDown={onKeyDown}
+      onMouseUp={onPick}
+      onFocus={(e) => {
+        setFocused(true);
+        setSegment(segmentAt(e.currentTarget.selectionStart ?? 0));
+        setCursor(0);
+      }}
+      onBlur={() => setFocused(false)}
+      className={cn("tabular-nums", className)}
     />
   );
 }
