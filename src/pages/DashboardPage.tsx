@@ -22,6 +22,9 @@ import { usePageMeta } from "@/store/pageMeta";
 import { useIsMobile } from "@/hooks/useMediaQuery";
 import { SwipeCards } from "@/components/mobile/SwipeCards";
 import { StatCard } from "@/components/dashboard/StatCard";
+
+/** Named once: the mobile layout gives this card its own row by matching it. */
+const SILO_BALANCE = "Current Silo Balance";
 import { TrendChart, CHART_COLORS } from "@/components/dashboard/TrendChart";
 import {
   DateRangeFilter,
@@ -115,7 +118,7 @@ export default function DashboardPage() {
           delta: deltaPct(fullTrend.map((p) => p.jumbo)),
         },
         {
-          title: "Current Silo Balance",
+          title: SILO_BALANCE,
           value: kpiReport!.data.silo.currentStock,
           unit: "MT",
           decimals: 2,
@@ -336,9 +339,17 @@ export default function DashboardPage() {
 
         <DateRangeFilter value={preset} onChange={onRange} />
 
-        <div className="grid grid-cols-1 gap-3">
+        {/* Two to a row. The silo balance takes the full width: it is the one
+            figure the plant is actually run on, and sitting it beside a bag
+            count reads as though the two carry the same weight. Being third in
+            the order, it lands on its own line and leaves four clean pairs. */}
+        <div className="grid grid-cols-2 gap-3">
           {kpis.map((k) => (
-            <StatCard key={k.title} {...k} />
+            <StatCard
+              key={k.title}
+              {...k}
+              className={k.title === SILO_BALANCE ? "col-span-2" : undefined}
+            />
           ))}
         </div>
 

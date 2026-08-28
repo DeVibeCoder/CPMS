@@ -12,6 +12,8 @@ interface StatCardProps {
   /** For deltas, whether a positive change is "good" (green). */
   positiveIsGood?: boolean;
   accent?: "blue" | "emerald" | "amber" | "violet" | "slate";
+  /** For the caller to place the card — a column span, mostly. */
+  className?: string;
 }
 
 const ACCENTS: Record<string, string> = {
@@ -31,20 +33,28 @@ export function StatCard({
   delta,
   positiveIsGood = true,
   accent = "blue",
+  className,
 }: StatCardProps) {
   const showDelta = delta !== null && delta !== undefined && Number.isFinite(delta);
   const up = (delta ?? 0) >= 0;
   const good = up === positiveIsGood;
 
   return (
-    <Card className="p-5 transition-shadow hover:shadow-elevated">
+    // A step tighter on a phone, where these sit two to a row: at the desktop
+    // padding a card is mostly margin and the figure has nowhere to go.
+    <Card
+      className={cn(
+        "p-3.5 transition-shadow hover:shadow-elevated sm:p-5",
+        className,
+      )}
+    >
       <div className="flex items-start justify-between">
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-muted-foreground">
+          <p className="truncate text-[13px] font-medium text-muted-foreground sm:text-sm">
             {title}
           </p>
           <div className="mt-2 flex items-baseline gap-1.5">
-            <span className="text-2xl font-bold tracking-tight tabular-nums">
+            <span className="text-xl font-bold tracking-tight tabular-nums sm:text-2xl">
               {typeof value === "number"
                 ? formatNumber(value, decimals !== undefined ? { decimals } : {})
                 : value}
