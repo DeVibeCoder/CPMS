@@ -505,7 +505,12 @@ function StaffCard({
           four people you cannot see at once. */}
       <CardContent className="flex items-start gap-2 p-2.5">
         <div className="min-w-0 flex-1">
-          <div className="truncate font-medium leading-tight">
+          {/* Wrapped to two lines rather than truncated. A staff list exists to
+              be looked up by name, and "MOHAMED IHUSAAN ABDUL…" is not a name
+              you can look anybody up by. Two lines is enough for every name the
+              plant has and still a cap, so one long one cannot push the row to
+              four. */}
+          <div className="line-clamp-2 break-words text-[13px] font-medium leading-snug">
             {employee.name}
           </div>
           <div className="truncate text-[11px] leading-tight text-muted-foreground">
@@ -516,14 +521,16 @@ function StaffCard({
           <RowNote employee={employee} sheets={sheets} />
         </div>
 
-        <div className="flex shrink-0 items-center gap-0.5">
+        <div className="flex shrink-0 items-center gap-1.5">
           <PresenceBadge status={sheets.presence(employee)} />
+          {/* The two actions read as a pair, so they sit as one: a gap between
+              them only buys width the name could have had. */}
           {isAdmin && (
-            <>
+            <div className="flex items-center">
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
                 aria-label={`Edit ${employee.name}`}
                 onClick={onEdit}
               >
@@ -532,13 +539,13 @@ function StaffCard({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                className="h-7 w-7 text-muted-foreground hover:text-destructive"
                 aria-label={`Remove ${employee.name}`}
                 onClick={() => removeWithNotice(employee, sheets)}
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
-            </>
+            </div>
           )}
         </div>
       </CardContent>
