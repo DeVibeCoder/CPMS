@@ -219,18 +219,21 @@ function StaffList({ sheets }: { sheets: Timesheets }) {
 
         {/* Bulk tools, grouped to the right so they read as maintenance rather
             than part of looking somebody up. */}
-        {/* Two to a row on a phone rather than a ragged wrap: five buttons of
-            different widths reflow into something that looks broken, and these
-            are the ones a clerk reaches for least often. */}
-        <div className="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:flex sm:w-auto sm:flex-wrap">
-          <Button size="sm" className="w-full sm:w-auto" onClick={() => setAdding(true)}>
+        {/* On a phone these lose their labels and become icons. Four buttons
+            wide enough to read wrap into two ragged rows and push the list
+            itself off the screen — and Template, Import, Export and a red bin
+            are recognisable without being spelled out. Add staff keeps its
+            words: it is the one thing somebody opens this tab to do. */}
+        <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto sm:flex-wrap">
+          <Button
+            size="sm"
+            className="flex-1 sm:flex-none"
+            onClick={() => setAdding(true)}
+          >
             <UserPlus className="h-4 w-4" />
             Add staff
           </Button>
-          <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={onDownloadTemplate}>
-            <FileDown className="h-4 w-4" />
-            Template
-          </Button>
+
           <input
             ref={fileRef}
             type="file"
@@ -238,38 +241,68 @@ function StaffList({ sheets }: { sheets: Timesheets }) {
             className="hidden"
             onChange={(e) => onImport(e.target.files?.[0])}
           />
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full sm:w-auto"
-            disabled={importing}
-            onClick={() => fileRef.current?.click()}
-          >
-            {importing ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Upload className="h-4 w-4" />
-            )}
-            Import
-          </Button>
-          <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={onExport}>
-            <Download className="h-4 w-4" />
-            Export
-          </Button>
-          {/* For starting again on a corrected list. Deleting four hundred
-              people one at a time is not a start. */}
-          {isAdmin && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full text-destructive hover:bg-destructive/10 hover:text-destructive sm:w-auto"
-              disabled={sheets.employees.length + sheets.inactive.length === 0}
-              onClick={() => setConfirmClear(true)}
-            >
-              <Trash2 className="h-4 w-4" />
-              Remove all
-            </Button>
-          )}
+
+          {[
+            {
+              label: "Template",
+              icon: FileDown,
+              onClick: onDownloadTemplate,
+              show: true,
+              disabled: false,
+              danger: false,
+            },
+            {
+              label: importing ? "Importing…" : "Import",
+              icon: importing ? Loader2 : Upload,
+              onClick: () => fileRef.current?.click(),
+              show: true,
+              disabled: importing,
+              danger: false,
+            },
+            {
+              label: "Export",
+              icon: Download,
+              onClick: onExport,
+              show: true,
+              disabled: false,
+              danger: false,
+            },
+            {
+              label: "Remove all",
+              icon: Trash2,
+              onClick: () => setConfirmClear(true),
+              show: isAdmin,
+              disabled: sheets.employees.length + sheets.inactive.length === 0,
+              danger: true,
+            },
+          ]
+            .filter((tool) => tool.show)
+            .map((tool) => (
+              <Button
+                key={tool.label}
+                variant="outline"
+                // Icon-only still has to say what it is, or it says nothing at
+                // all to a screen reader and nothing on hover either.
+                aria-label={tool.label}
+                title={isMobile ? tool.label : undefined}
+                size={isMobile ? "icon" : "sm"}
+                disabled={tool.disabled}
+                className={cn(
+                  isMobile && "h-9 w-9 shrink-0",
+                  tool.danger &&
+                    "text-destructive hover:bg-destructive/10 hover:text-destructive",
+                )}
+                onClick={tool.onClick}
+              >
+                <tool.icon
+                  className={cn(
+                    "h-4 w-4",
+                    tool.icon === Loader2 && "animate-spin",
+                  )}
+                />
+                {!isMobile && tool.label}
+              </Button>
+            ))}
         </div>
       </div>
 
@@ -466,43 +499,48 @@ function StaffCard({
 }) {
   return (
     <Card className={cn(rowTint(employee, sheets))}>
-      <CardContent className="space-y-1.5 p-3">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <div className="truncate font-medium leading-tight">
-              {employee.name}
-            </div>
-            <div className="font-mono text-[11px] text-muted-foreground">
-              {employee.id}
-            </div>
+      {/* One block, not stacked rows: the name, everything about the person on
+          a single line under it, and the status and actions alongside. A staff
+          list is something you scan, and every row that costs five lines is
+          four people you cannot see at once. */}
+      <CardContent className="flex items-start gap-2 p-2.5">
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-medium leading-tight">
+            {employee.name}
           </div>
+          <div className="truncate text-[11px] leading-tight text-muted-foreground">
+            <span className="font-mono">{employee.id}</span>
+            {employee.department ? ` · ${employee.department}` : ""}
+            {employee.position ? ` · ${employee.position}` : ""}
+          </div>
+          <RowNote employee={employee} sheets={sheets} />
+        </div>
+
+        <div className="flex shrink-0 items-center gap-0.5">
           <PresenceBadge status={sheets.presence(employee)} />
+          {isAdmin && (
+            <>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                aria-label={`Edit ${employee.name}`}
+                onClick={onEdit}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                aria-label={`Remove ${employee.name}`}
+                onClick={() => removeWithNotice(employee, sheets)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </>
+          )}
         </div>
-
-        <div className="text-xs text-muted-foreground">
-          {[employee.department, employee.position].filter(Boolean).join(" · ") ||
-            "—"}
-        </div>
-
-        <RowNote employee={employee} sheets={sheets} />
-
-        {isAdmin && (
-          <div className="flex justify-end gap-1 pt-1">
-            <Button variant="outline" size="sm" onClick={onEdit}>
-              <Pencil className="h-3.5 w-3.5" />
-              Edit
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-muted-foreground hover:text-destructive"
-              onClick={() => removeWithNotice(employee, sheets)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Remove
-            </Button>
-          </div>
-        )}
       </CardContent>
     </Card>
   );
