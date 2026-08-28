@@ -52,7 +52,7 @@ export function AppLayout() {
           <div
             className={cn(
               "px-4 py-4",
-              focused ? "pb-4" : "pb-24", // clear the bottom nav
+              focused ? "pb-4" : "pb-20", // clear the bottom nav
             )}
           >
             {page}

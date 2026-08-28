@@ -46,9 +46,9 @@ const TABS: Tab[] = [
     icon: BarChart3,
     match: (p) => p.startsWith("/analytics"),
   },
-  // Attendance is administrator-only and still under development. There is no
-  // sidebar on mobile, so without a tab it would be unreachable on a phone —
-  // and it is filtered out for everyone else, whose bar is unchanged.
+  // Attendance is administrator-only. There is no sidebar on mobile, so without
+  // a tab it would be unreachable on a phone — and it is filtered out for
+  // everyone else, whose bar is unchanged.
   {
     label: "Attendance",
     to: "/attendance",
@@ -76,7 +76,11 @@ export function BottomNav() {
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/90 backdrop-blur-lg pb-safe">
-      <div className="mx-auto flex max-w-lg items-stretch gap-1 px-2 py-1">
+      {/* Six tabs have to share the narrowest screen the app runs on. At 360px
+          that is about 54px each, so the highlight pill is sized to fit inside
+          that rather than to a round number — a pill wider than its share is
+          what pushes the last tab off the end. */}
+      <div className="mx-auto flex max-w-lg items-stretch gap-0.5 px-1.5 py-0.5">
         {tabs.map((tab) => {
           const active = tab.match(location.pathname);
           return (
@@ -84,19 +88,21 @@ export function BottomNav() {
               key={tab.to}
               to={tab.to}
               className={cn(
-                "flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-[11px] font-medium transition-colors",
+                "flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1 text-[10px] font-medium leading-none transition-colors",
                 active ? "text-primary" : "text-muted-foreground",
               )}
             >
               <span
                 className={cn(
-                  "flex h-8 w-14 items-center justify-center rounded-full transition-colors",
+                  "flex h-7 w-12 items-center justify-center rounded-full transition-colors",
                   active && "bg-primary/[12%]",
                 )}
               >
-                <tab.icon className="h-[22px] w-[22px]" />
+                <tab.icon className="h-5 w-5" />
               </span>
-              {tab.label}
+              {/* Truncated rather than wrapped: a label going to two lines would
+                  make the whole bar taller for the sake of one word. */}
+              <span className="w-full truncate text-center">{tab.label}</span>
             </NavLink>
           );
         })}
