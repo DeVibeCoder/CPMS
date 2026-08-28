@@ -17,6 +17,7 @@ import {
   monthDates,
   digitRunAt,
   formatDayMonthYear,
+  maskDayMonthYear,
   parseDayMonthYear,
   parseTime,
   parseTyped,
@@ -903,6 +904,25 @@ test("a date is read and shown the way the plant writes it", () => {
   assert.equal(parseDayMonthYear(" 5/1/2026 "), "2026-01-05");
   assert.equal(formatDayMonthYear("2026-12-25"), "25/12/2026");
   assert.equal(formatDayMonthYear("2026-01-05"), "05/01/2026");
+});
+
+test("the separators appear as the digits are typed", () => {
+  // One keystroke at a time, as somebody actually enters 25/12/2026.
+  const typed = ["2", "25", "251", "2512", "25122", "251220", "2512202", "25122026"];
+  assert.deepEqual(
+    typed.map(maskDayMonthYear),
+    ["2", "25/", "25/1", "25/12/", "25/12/2", "25/12/20", "25/12/202", "25/12/2026"],
+  );
+});
+
+test("typing the separators anyway does not double them", () => {
+  assert.equal(maskDayMonthYear("25/"), "25/");
+  assert.equal(maskDayMonthYear("25/12/2026"), "25/12/2026");
+  assert.equal(maskDayMonthYear("25-12-2026"), "25/12/2026");
+});
+
+test("more digits than a date has are not accepted", () => {
+  assert.equal(maskDayMonthYear("251220261234"), "25/12/2026");
 });
 
 test("clicking a date segment selects the whole of it", () => {

@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
   digitRunAt,
   formatDayMonthYear,
+  maskDayMonthYear,
   parseDayMonthYear,
 } from "@/lib/attendance/calculations";
 
@@ -17,10 +18,11 @@ import {
  * not a cosmetic difference. It is worse here than for times, because a misread
  * time looks wrong and a misread date does not.
  *
- * What the native control does get right is that it is *segmented*: clicking the
- * month selects the month, so the next keystroke replaces it. That is worth
- * keeping, and this keeps it — see `onSelectSegment`. Giving up the locale
- * problem was the point; giving up the editing behaviour with it was not.
+ * What the native control does get right is that you type digits and it deals
+ * with the rest: separators appear on their own, and clicking the month selects
+ * the month so the next keystroke replaces it. Both are worth keeping and both
+ * are kept — see `onType` and `onSelectSegment`. Giving up the locale problem
+ * was the point; giving up the editing behaviour with it was not.
  *
  * An unreadable date is left on screen to be corrected rather than being
  * discarded or rounded to something real, and the field says so in red. What
@@ -67,6 +69,24 @@ export function DateField({
   };
 
   /**
+   * Take what was typed, and put the separators in.
+   *
+   * Only when the edit is an append at the end of the field. Anywhere else — a
+   * segment replaced, a digit deleted from the middle — the text is taken as it
+   * comes, because re-deriving it from the digits would repack them: replace the
+   * month in 25/12/2026 with a single 7 and 25/7/2026 would be rebuilt as
+   * 25/72/026. The parser is content with 25/7/2026, so there is nothing to fix
+   * and every reason not to try.
+   */
+  const onType = (event: ChangeEvent<HTMLInputElement>) => {
+    const typed = event.target.value;
+    const appended =
+      typed.length > text.length &&
+      event.target.selectionStart === typed.length;
+    setText(appended ? maskDayMonthYear(typed) : typed);
+  };
+
+  /**
    * Select the whole day, month or year the caret landed in.
    *
    * Skipped when the selection is not collapsed, because that is somebody
@@ -96,7 +116,7 @@ export function DateField({
       aria-label={ariaLabel}
       disabled={disabled}
       value={text}
-      onChange={(e) => setText(e.target.value)}
+      onChange={onType}
       // `mouseUp`, not `click`: the browser places the caret between the two, so
       // this is the first moment there is a caret position worth reading.
       onMouseUp={onSelectSegment}

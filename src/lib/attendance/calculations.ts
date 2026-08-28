@@ -113,6 +113,28 @@ export function parseDayMonthYear(raw: string): string | null {
 }
 
 /**
+ * Put the separators in as somebody types the digits.
+ *
+ * 25122026 becomes 25/12/2026 without a slash ever being typed. The separator
+ * appears as soon as the segment before it is full, so the field shows 25/ and
+ * the next keystroke is plainly the month — the same feedback the native control
+ * gives, and the reason nobody typing into that one thinks about separators.
+ *
+ * Only ever used when appending at the end of the field. Repacking the digits
+ * while somebody is editing the middle of a date would turn 25/7/2026 into
+ * 25/72/026, and the caller is careful not to ask for that; see `DateField`.
+ */
+export function maskDayMonthYear(raw: string): string {
+  const digits = raw.replace(/[^\d]/g, "").slice(0, 8);
+  let out = digits.slice(0, 2);
+  if (digits.length >= 2) out += "/";
+  out += digits.slice(2, 4);
+  if (digits.length >= 4) out += "/";
+  out += digits.slice(4, 8);
+  return out;
+}
+
+/**
  * The run of digits the caret is sitting in, as [start, end).
  *
  * What makes a typed date field behave like the native one: click anywhere in
