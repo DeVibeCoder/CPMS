@@ -1,6 +1,8 @@
-import type { Employee, TimesheetEntry } from "@/types/attendance";
+import type { Departure, Employee, TimesheetEntry } from "@/types/attendance";
 import {
+  MOCK_CHART,
   MOCK_DEPARTMENTS,
+  MOCK_DEPARTURES,
   MOCK_EMPLOYEES,
   MOCK_ENTRIES,
   MOCK_MONTHS,
@@ -26,7 +28,11 @@ export interface AttendanceSource {
   readonly isMock: boolean;
   listEmployees(): Promise<Employee[]>;
   listDepartments(): Promise<string[]>;
+  /** Booked spells away and exits — what the Status and History tabs hold. */
+  listDepartures(): Promise<Departure[]>;
   listEntries(): Promise<TimesheetEntry[]>;
+  /** Org chart slot id -> employee id. Absent keys are vacant posts. */
+  listChart(): Promise<Record<string, string>>;
   /** Dates whose timesheet has been completed. */
   listSubmittedDates(): Promise<string[]>;
   listWeekStarts(): Promise<string[]>;
@@ -42,6 +48,12 @@ const mockSource: AttendanceSource = {
   },
   async listDepartments() {
     return MOCK_DEPARTMENTS;
+  },
+  async listDepartures() {
+    return MOCK_DEPARTURES;
+  },
+  async listChart() {
+    return MOCK_CHART;
   },
   async listEntries() {
     return MOCK_ENTRIES;
@@ -59,4 +71,4 @@ const mockSource: AttendanceSource = {
 
 export const attendanceSource: AttendanceSource = mockSource;
 
-export type { Employee, TimesheetEntry };
+export type { Departure, Employee, TimesheetEntry };

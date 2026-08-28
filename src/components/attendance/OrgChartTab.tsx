@@ -63,6 +63,30 @@ function slotState(
   return "filled";
 }
 
+/**
+ * The sheet of paper the chart is made to fit.
+ *
+ * Letter landscape, in inches, because that is what the plant prints on. CSS
+ * lays out at 96px to the inch, so the printable box below is what the chart has
+ * to be scaled into; the export renders the same page at a resolution worth
+ * printing from.
+ */
+const PAGE = {
+  name: "letter landscape",
+  width: 11,
+  height: 8.5,
+  margin: 0.3,
+} as const;
+
+const CSS_DPI = 96;
+const EXPORT_DPI = 200;
+
+/** What is left of the page once the margins are taken off, in CSS pixels. */
+const PRINTABLE = {
+  width: (PAGE.width - 2 * PAGE.margin) * CSS_DPI,
+  height: (PAGE.height - 2 * PAGE.margin) * CSS_DPI,
+};
+
 /** Red for an exit, blue for a vacation — the same colours the tabs use. */
 const SLOT_STYLE: Record<SlotState, string> = {
   vacant: "border-dashed border-border bg-muted/30 text-muted-foreground",
@@ -122,43 +146,152 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
   }, [sheets.employees, sheets.chart, editing]);
 
   /**
-   * Print the chart alone.
+   * Lay the chart out on a sheet of paper, do something with it, put it back.
    *
-   * The class is what scopes the print stylesheet to this one sheet — without
-   * it, hiding the app's chrome would also apply to printing a stock report
-   * from anywhere else in the app. Removed in a `finally` so a cancelled print
-   * dialog cannot leave the page permanently half-hidden.
+   * Both the printer and the PNG want the same thing: the chart at a fixed
+   * width, in the two-column form, with the on-screen furniture gone. On screen
+   * it is responsive, and what it happens to look like in this browser window is
+   * not what should come out of a printer — a chart that reflows to one column
+   * on a laptop would print as a two-page ribbon.
+   *
+   * So the paper layout is a class, applied for as long as the capture takes and
+   * removed in a `finally` so a cancelled print dialog cannot leave the page
+   * stuck in it.
    */
-  const onPrint = () => {
-    const root = document.documentElement;
-    root.classList.add("printing-chart");
+  const onPaper = async <T,>(
+    run: (sheet: HTMLDivElement) => T | Promise<T>,
+  ): Promise<T | undefined> => {
+    const sheet = sheetRef.current;
+    if (!sheet) return undefined;
+    sheet.classList.add("chart-page");
     try {
-      window.print();
+      return await run(sheet);
     } finally {
-      root.classList.remove("printing-chart");
+      sheet.classList.remove("chart-page");
     }
   };
 
   /**
-   * Download the chart as a PNG.
+   * Print the chart on one Letter page, landscape.
+   *
+   * Two things have to be said, and neither can be said in the stylesheet alone.
+   * The paper is chosen by an `@page` rule, which has no selector and so cannot
+   * be scoped to this component — it is injected for the duration of the print
+   * and taken out again, otherwise printing a stock report from anywhere else in
+   * the app would come out landscape too.
+   *
+   * The fit is the other. Whether the chart is shorter or taller than the page
+   * depends on how many posts the chart has, so it is measured and scaled rather
+   * than guessed at; `Math.min(1, …)` keeps a chart that already fits at its
+   * proper size instead of blowing it up to fill the sheet.
+   */
+  const onPrint = () =>
+    onPaper((sheet) => {
+      const root = document.documentElement;
+      const scale = Math.min(
+        1,
+        PRINTABLE.width / sheet.offsetWidth,
+        PRINTABLE.height / sheet.offsetHeight,
+      );
+      root.style.setProperty("--chart-print-scale", String(scale));
+      // A scale is painted, not laid out: the box keeps its full height and
+      // would carry a second, empty page behind it. See the print stylesheet.
+      root.style.setProperty(
+        "--chart-print-height",
+        `${Math.ceil(sheet.offsetHeight * scale)}px`,
+      );
+
+      // Everything between the chart and <body> is marked so the print
+      // stylesheet can keep the chain and drop the rest of the app.
+      const ancestors: HTMLElement[] = [];
+      for (
+        let el = sheet.parentElement;
+        el && el !== document.body;
+        el = el.parentElement
+      ) {
+        el.classList.add("chart-print-ancestor");
+        ancestors.push(el);
+      }
+
+      const page = document.createElement("style");
+      page.textContent = `@page { size: ${PAGE.name}; margin: ${PAGE.margin}in; }`;
+      document.head.append(page);
+
+      root.classList.add("printing-chart");
+      try {
+        window.print();
+      } finally {
+        root.classList.remove("printing-chart");
+        root.style.removeProperty("--chart-print-scale");
+        root.style.removeProperty("--chart-print-height");
+        for (const el of ancestors) el.classList.remove("chart-print-ancestor");
+        page.remove();
+      }
+    });
+
+  /**
+   * Download the chart as a PNG, on the same Letter landscape page.
    *
    * An image rather than a PDF: this gets pasted into notices and messages, and
-   * the libraries are already in the bundle for the report exports.
+   * the library is already in the bundle for the report exports.
+   *
+   * The capture is then drawn onto a page-shaped canvas rather than saved as it
+   * comes, so the file somebody prints from their phone is the sheet the Print
+   * button produces — same paper, same margins, same fit — instead of a
+   * chart-shaped image the printer has to guess how to place.
    */
   const onDownload = async () => {
-    if (!sheetRef.current) return;
     setSaving(true);
     try {
-      const { default: html2canvas } = await import("html2canvas");
-      const canvas = await html2canvas(sheetRef.current, {
-        backgroundColor: "#ffffff",
-        scale: 2,
+      await onPaper(async (sheet) => {
+        const { default: html2canvas } = await import("html2canvas");
+        const shot = await html2canvas(sheet, {
+          backgroundColor: "#ffffff",
+          scale: 3,
+          width: sheet.offsetWidth,
+          height: sheet.offsetHeight,
+          // The sheet is deliberately wider than a narrow window while it is
+          // being captured, and html2canvas would otherwise clip it to the
+          // window it thinks it is rendering into.
+          windowWidth: Math.max(sheet.offsetWidth, window.innerWidth),
+          windowHeight: Math.max(sheet.offsetHeight, window.innerHeight),
+        });
+
+        const page = document.createElement("canvas");
+        page.width = Math.round(PAGE.width * EXPORT_DPI);
+        page.height = Math.round(PAGE.height * EXPORT_DPI);
+        const ctx = page.getContext("2d");
+        if (!ctx) throw new Error("This browser cannot draw the page.");
+
+        // Paper is white whatever the app's theme is doing.
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, page.width, page.height);
+
+        const margin = PAGE.margin * EXPORT_DPI;
+        const fit = Math.min(
+          (page.width - 2 * margin) / shot.width,
+          (page.height - 2 * margin) / shot.height,
+        );
+        const width = shot.width * fit;
+        const height = shot.height * fit;
+        ctx.drawImage(
+          shot,
+          (page.width - width) / 2,
+          (page.height - height) / 2,
+          width,
+          height,
+        );
+
+        const link = document.createElement("a");
+        link.download = "cpsm-org-chart-letter-landscape.png";
+        link.href = page.toDataURL("image/png");
+        link.click();
       });
-      const link = document.createElement("a");
-      link.download = "cpsm-org-chart.png";
-      link.href = canvas.toDataURL("image/png");
-      link.click();
-      toast({ variant: "success", title: "Chart downloaded" });
+      toast({
+        variant: "success",
+        title: "Chart downloaded",
+        description: "One Letter page, landscape — print it at 100%.",
+      });
     } catch {
       toast({
         variant: "destructive",
@@ -204,7 +337,7 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
   };
 
   const Group = ({ group }: { group: ChartGroup }) => (
-    <div className="min-w-[210px] flex-1 space-y-1.5">
+    <div className="chart-group min-w-[210px] flex-1 space-y-1.5">
       <div className="rounded-md bg-primary/85 px-3 py-1.5 text-center text-[13px] font-bold tracking-wide text-primary-foreground">
         {group.label}
       </div>
@@ -221,7 +354,8 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
         <p className="text-sm text-muted-foreground">
           {isAdmin
             ? "Click any box to put somebody in that post. Posts are fixed; who fills them is not."
-            : "Posts and who fills them. Only an administrator can change assignments."}
+            : "Posts and who fills them. Only an administrator can change assignments."}{" "}
+          Print and Download both give one Letter page, landscape.
         </p>
         <div className="ml-auto flex gap-2">
           <Button variant="outline" size="sm" onClick={onPrint}>
@@ -235,9 +369,14 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
         </div>
       </div>
 
+      {/* `print-sheet` is what the print stylesheet scopes to, and `chart-page`
+          is added to this same element while a print or a download is running —
+          see `onPaper`. Nothing here uses `print:` utilities: the layout is
+          measured just before printing, and a rule that changed it afterwards
+          would make that measurement a lie. */}
       <div
         ref={sheetRef}
-        className="print-sheet space-y-6 rounded-lg border border-border bg-card p-5 print:border-0 print:p-0"
+        className="print-sheet chart-sheet rounded-lg border border-border bg-card"
       >
         <div className="border-b border-border pb-3 text-center">
           <h2 className="text-lg font-bold tracking-tight">{CHART_TITLE}</h2>
@@ -254,7 +393,7 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
           {isAdmin && (
             <button
               type="button"
-              className="mt-1 w-full text-center text-[10px] text-muted-foreground underline-offset-2 hover:underline print:hidden"
+              className="chart-screen-only mt-1 w-full text-center text-[10px] text-muted-foreground underline-offset-2 hover:underline"
               onClick={() => setEditing(MANAGER)}
             >
               assign
@@ -263,7 +402,7 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
         </div>
 
         {/* The two branches */}
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="chart-branches grid gap-6 lg:grid-cols-2">
           <div className="space-y-3">
             <div className="mx-auto max-w-[320px] space-y-1.5">
               <Slot slot={SUPERVISOR_DISPATCH} wide />
@@ -315,7 +454,7 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
 
         {/* Footnotes. Manpower is counted off the chart; capacity is not, and
             is reproduced from the plant's own sheet. */}
-        <div className="grid gap-6 border-t border-border pt-4 md:grid-cols-2">
+        <div className="chart-notes grid gap-6 border-t border-border pt-4 md:grid-cols-2">
           <div>
             <h3 className="mb-2 text-[13px] font-bold tracking-wide">MANPOWER</h3>
             <ul className="space-y-1 text-[12px]">

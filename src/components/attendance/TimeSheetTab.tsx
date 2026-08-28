@@ -85,32 +85,20 @@ export function TimeSheetTab({
     sheets.updateEntry(employeeId, date, patch);
 
   /**
-   * Write the booked status onto the day's rows.
+   * Bring the day's rows into line with what is booked against each person.
    *
-   * Done as an effect rather than only at read time so the stored entry matches
-   * what the screen shows — the master sheet and every total read the entry, not
-   * this component, and a row that only *looked* like vacation would count as a
-   * worked day everywhere else.
+   * The rule and the writing both live in the hook, so a departure added on the
+   * Status tab reaches the stored rows whether or not this screen is open — the
+   * master sheet and every total read those rows, and a day that only *looked*
+   * like a vacation here would count as a worked day everywhere else. What is
+   * left for this component is the one case the hook cannot reach on its own: a
+   * date nobody has opened yet has no rows to correct, so opening it is when
+   * they get written.
    */
+  const { syncDay } = sheets;
   useEffect(() => {
-    if (submitted) return;
-    for (const { employee, entry, away } of rows) {
-      const wanted: AttendanceStatus | null = away
-        ? (away.type as AttendanceStatus)
-        : null;
-      if (!wanted) continue;
-      if (entry?.status === wanted) continue;
-      set(employee.id, {
-        status: wanted,
-        start: undefined,
-        end: undefined,
-        breaks: undefined,
-      });
-    }
-    // `rows` is derived from the entries this writes to, so it is deliberately
-    // not a dependency — the guards above make the write idempotent.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date, submitted, sheets.departures, sheets.roster]);
+    syncDay(date);
+  }, [syncDay, date]);
 
   const dayTotals = useMemo(() => sumEntries(rows.map((r) => r.entry)), [rows]);
 
@@ -262,107 +250,116 @@ export function TimeSheetTab({
       ) : (
         <Card>
           <CardContent className="p-0">
-            <div className="overflow-x-auto scrollbar-thin">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[90px]">Emp ID</TableHead>
-                    <TableHead className="min-w-[170px]">Name</TableHead>
-                    <TableHead className="w-[80px]">Start</TableHead>
-                    <TableHead className="w-[110px]">Breaks</TableHead>
-                    <TableHead className="w-[80px]">End</TableHead>
-                    <TableHead className="w-[95px] text-right">Total Hrs</TableHead>
-                    <TableHead className="w-[90px] text-right">OT Hrs</TableHead>
-                    <TableHead className="w-[135px]">Status</TableHead>
-                    <TableHead className="min-w-[170px]">Remarks</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.map(({ employee, entry, totals, away }) => {
-                    // A booked absence owns the row: the times are meaningless
-                    // and the status is not a choice while it runs.
-                    const locked = submitted || Boolean(away);
-                    const fieldsOff =
-                      locked || (entry?.status ?? "present") !== "present";
+            {/*
+              Nine columns of a plant's working day do not fit a laptop, so the
+              table is given the width it actually needs and the card scrolls
+              sideways. Left to divide up whatever was going, the browser took it
+              out of the narrowest columns — and those are Start, Breaks and End,
+              which then clipped the very times the sheet exists to record.
 
-                    return (
-                      <TableRow
-                        key={employee.id}
-                        className={cn(away && departureTint(away.type))}
-                      >
-                        <TableCell className="font-mono text-xs">
-                          {employee.id}
-                        </TableCell>
-                        <TableCell>
-                          <div className="font-medium leading-tight">
-                            {employee.name}
-                          </div>
-                          <div className="text-[11px] text-muted-foreground">
-                            {employee.department}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <TimeField
-                            aria-label={`Start for ${employee.name}`}
-                            value={entry?.start}
-                            disabled={fieldsOff}
-                            onChange={(v) => set(employee.id, { start: v })}
+              The cell padding is halved here for the same reason: at the shared
+              px-4 the padding alone was 288px of the row, more than three time
+              columns' worth.
+            */}
+            <Table className="min-w-[1060px] [&_td]:px-2 [&_th]:px-2 [&_td:first-child]:pl-4 [&_th:first-child]:pl-4 [&_td:last-child]:pr-4 [&_th:last-child]:pr-4">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[86px]">Emp ID</TableHead>
+                  <TableHead className="min-w-[170px]">Name</TableHead>
+                  <TableHead className="w-[92px]">Start</TableHead>
+                  <TableHead className="w-[120px]">Breaks</TableHead>
+                  <TableHead className="w-[92px]">End</TableHead>
+                  <TableHead className="w-[96px] text-right">Total Hrs</TableHead>
+                  <TableHead className="w-[88px] text-right">OT Hrs</TableHead>
+                  <TableHead className="w-[132px]">Status</TableHead>
+                  <TableHead className="min-w-[160px]">Remarks</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map(({ employee, entry, totals, away }) => {
+                  // A booked absence owns the row: the times are meaningless
+                  // and the status is not a choice while it runs.
+                  const locked = submitted || Boolean(away);
+                  const fieldsOff =
+                    locked || (entry?.status ?? "present") !== "present";
+
+                  return (
+                    <TableRow
+                      key={employee.id}
+                      className={cn(away && departureTint(away.type))}
+                    >
+                      <TableCell className="font-mono text-xs">
+                        {employee.id}
+                      </TableCell>
+                      <TableCell>
+                        <div className="font-medium leading-tight">
+                          {employee.name}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {employee.department}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <TimeField
+                          aria-label={`Start for ${employee.name}`}
+                          value={entry?.start}
+                          disabled={fieldsOff}
+                          onChange={(v) => set(employee.id, { start: v })}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <BreaksField
+                          entry={entry}
+                          disabled={fieldsOff}
+                          onChange={(breaks) => set(employee.id, { breaks })}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <TimeField
+                          aria-label={`End for ${employee.name}`}
+                          value={entry?.end}
+                          disabled={fieldsOff}
+                          onChange={(v) => set(employee.id, { end: v })}
+                        />
+                      </TableCell>
+                      <TableCell className="text-right font-semibold tabular-nums">
+                        {formatDuration(totals.workedMinutes)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {totals.overtimeMinutes > 0 ? (
+                          <span className="text-primary">
+                            {formatDuration(totals.overtimeMinutes)}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {locked ? (
+                          <StatusBadge status={entry?.status ?? "present"} />
+                        ) : (
+                          <StatusSelect
+                            value={entry?.status ?? "present"}
+                            onChange={(v) => set(employee.id, { status: v })}
                           />
-                        </TableCell>
-                        <TableCell>
-                          <BreaksField
-                            entry={entry}
-                            disabled={fieldsOff}
-                            onChange={(breaks) => set(employee.id, { breaks })}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <TimeField
-                            aria-label={`End for ${employee.name}`}
-                            value={entry?.end}
-                            disabled={fieldsOff}
-                            onChange={(v) => set(employee.id, { end: v })}
-                          />
-                        </TableCell>
-                        <TableCell className="text-right font-semibold tabular-nums">
-                          {formatDuration(totals.workedMinutes)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {totals.overtimeMinutes > 0 ? (
-                            <span className="text-primary">
-                              {formatDuration(totals.overtimeMinutes)}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {locked ? (
-                            <StatusBadge status={entry?.status ?? "present"} />
-                          ) : (
-                            <StatusSelect
-                              value={entry?.status ?? "present"}
-                              onChange={(v) => set(employee.id, { status: v })}
-                            />
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            className="h-8"
-                            placeholder="—"
-                            disabled={submitted}
-                            value={entry?.remarks ?? ""}
-                            onChange={(e) =>
-                              set(employee.id, { remarks: e.target.value })
-                            }
-                          />
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          className="h-8"
+                          placeholder="—"
+                          disabled={submitted}
+                          value={entry?.remarks ?? ""}
+                          onChange={(e) =>
+                            set(employee.id, { remarks: e.target.value })
+                          }
+                        />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
       )}

@@ -13,7 +13,10 @@ import type { Departure, Employee, TimesheetEntry } from "@/types/attendance";
  * dropped rather than migrated: this is a session's working copy, not a record
  * of anything, and a half-understood old payload is worse than starting again.
  */
-const KEY = "cpsm.attendance.v4";
+// v5: timesheet rows gained the `auto` flag and the sample gained a plant's
+// worth of staff, departures and chart assignments. A v4 payload predates all
+// of it, so it is dropped rather than migrated — see the note above.
+const KEY = "cpsm.attendance.v5";
 
 export interface AttendanceState {
   employees: Employee[];

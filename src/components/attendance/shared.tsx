@@ -22,9 +22,10 @@ export function MockDataNotice({ onReset }: { onReset?: () => void }) {
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-warning/30 bg-warning/[0.07] px-3 py-2 text-xs">
       <Badge variant="warning">Under development</Badge>
       <span className="text-muted-foreground">
-        The timesheets start from invented sample shifts. Attendance is not
-        connected to any payroll or HR system — what you enter is saved in this
-        browser only, and clearing site data loses it.
+        This opens on an invented plant — sample staff, sample departures, sample
+        shifts. Use Remove all on the Employees tab to clear it and start on your
+        own list. Attendance is not connected to any payroll or HR system: what
+        you enter is saved in this browser only, and clearing site data loses it.
       </span>
       {onReset && (
         <button

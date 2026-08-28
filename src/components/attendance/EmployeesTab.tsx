@@ -68,6 +68,10 @@ interface ImportResult {
  * and who has left. Nobody is ever deleted — a person whose exit date arrives
  * moves across on their own, and their timesheet history stays exactly where it
  * was, because the hours they worked are still hours the plant paid for.
+ *
+ * It opens on the sample plant rather than empty, so every one of the three has
+ * something in it to look at. Remove all clears the lot when a real list is
+ * ready to go in.
  */
 export function EmployeesTab({ sheets }: { sheets: Timesheets }) {
   const [view, setView] = useState<"staff" | "status" | "history">("staff");
@@ -250,8 +254,9 @@ function StaffList({ sheets }: { sheets: Timesheets }) {
               <Download className="h-4 w-4" />
               Export
             </Button>
-            {/* Here for testing: the module is being loaded and reloaded with
-                trial lists, and clearing one by one is not a review. */}
+            {/* Here for testing, and for the first real import: the module
+                ships with an invented plant in it, and getting to an empty list
+                one person at a time is not a start. */}
             {isAdmin && (
               <Button
                 variant="outline"
@@ -327,9 +332,9 @@ function StaffList({ sheets }: { sheets: Timesheets }) {
             <DialogTitle>Remove all staff?</DialogTitle>
             <DialogDescription>
               This deletes all {sheets.employees.length + sheets.inactive.length}{" "}
-              staff, their departures and their timesheet rows. The sample shifts
-              behind the Time Sheet and Master tabs are left alone. It cannot be
-              undone.
+              staff — the sample plant included — with their departures, their
+              timesheet rows and their posts on the org chart. Use it to start on
+              your own list. Reset to sample brings the invented crew back.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

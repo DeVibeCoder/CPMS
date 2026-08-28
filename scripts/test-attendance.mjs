@@ -224,9 +224,14 @@ test("month dates cover the month and nothing else", () => {
 // The mock data has to contain the cases it claims to, or the screens look
 // finished while never showing anything interesting.
 // -----------------------------------------------------------------------------
-const { MOCK_EMPLOYEES, MOCK_ENTRIES, MOCK_SUBMITTED_DATES } = await import(
-  "../src/data/attendance/mockData.ts"
-);
+const {
+  MOCK_CHART,
+  MOCK_DEPARTURES,
+  MOCK_EMPLOYEES,
+  MOCK_ENTRIES,
+  MOCK_SUBMITTED_DATES,
+  MOCK_TODAY,
+} = await import("../src/data/attendance/mockData.ts");
 
 console.log("\nMock data");
 
@@ -636,7 +641,7 @@ const { PLANT_SECTIONS, normaliseSection } = await import(
 
 console.log("\nSample data and sections");
 
-test("every sample employee is flagged, so the staff list starts empty", () => {
+test("every sample employee is flagged as invented", () => {
   assert.ok(MOCK_EMPLOYEES.length > 0);
   assert.ok(MOCK_EMPLOYEES.every((e) => e.sample === true));
 });
@@ -668,6 +673,107 @@ test("a section is folded onto the fixed list however it was typed", () => {
 
 test("a section that does not exist is kept, not silently relabelled", () => {
   assert.equal(normaliseSection("Quarry"), "QUARRY");
+});
+
+// -----------------------------------------------------------------------------
+// Automatic status. A departure recorded once on the Status tab has to reach the
+// timesheet rows, and withdrawing it has to take those rows back off again. The
+// second half is the one worth testing: it is the half a stored row can get
+// wrong, and the half that needs the `auto` flag to be possible at all.
+// -----------------------------------------------------------------------------
+const { bookedStatus, reconcileEntry, reconcileEntries } = await import(
+  "../src/lib/attendance/autoStatus.ts"
+);
+
+console.log("\nAutomatic status");
+
+const AT = "2026-08-14";
+const vacation = [
+  { id: "v1", employeeId: "E001", type: "vacation", from: "2026-08-10", to: "2026-08-20" },
+];
+const worked = {
+  employeeId: "E001",
+  date: AT,
+  start: "07:00",
+  end: "16:00",
+  breaks: [LUNCH],
+  status: "present",
+};
+
+test("a booked spell away names the status the day has to take", () => {
+  assert.equal(bookedStatus(vacation, "E001", AT), "vacation");
+  assert.equal(bookedStatus(vacation, "E001", "2026-08-21"), null);
+  assert.equal(bookedStatus(vacation, "E002", AT), null);
+});
+
+test("an exit is not a spell away, so it forces no status", () => {
+  const gone = [{ id: "x1", employeeId: "E001", type: "exit", from: "2026-08-01" }];
+  assert.equal(bookedStatus(gone, "E001", AT), null);
+});
+
+test("a booked vacation takes the hours off the day it covers", () => {
+  const result = reconcileEntry(worked, vacation, "E001", AT);
+  assert.equal(result.action, "write");
+  assert.equal(result.entry.status, "vacation");
+  assert.equal(result.entry.auto, true);
+  assert.equal(result.entry.start, undefined);
+  assert.equal(result.entry.end, undefined);
+  assert.equal(result.entry.breaks, undefined);
+});
+
+test("a row already written from the booking is left alone", () => {
+  const written = reconcileEntry(worked, vacation, "E001", AT).entry;
+  assert.equal(reconcileEntry(written, vacation, "E001", AT).action, "keep");
+});
+
+test("a day with nothing booked and no row stays a day with no row", () => {
+  assert.equal(reconcileEntry(undefined, [], "E001", AT).action, "keep");
+});
+
+test("withdrawing the departure takes the row away with it", () => {
+  const written = reconcileEntry(worked, vacation, "E001", AT).entry;
+  assert.equal(reconcileEntry(written, [], "E001", AT).action, "delete");
+});
+
+test("a sick day typed on the timesheet is never touched", () => {
+  const byHand = { employeeId: "E001", date: AT, status: "sick" };
+  assert.equal(reconcileEntry(byHand, [], "E001", AT).action, "keep");
+});
+
+test("a remark somebody wrote survives the status being written over it", () => {
+  const noted = { ...worked, remarks: "CALLED IN" };
+  const written = reconcileEntry(noted, vacation, "E001", AT).entry;
+  assert.equal(written.remarks, "CALLED IN");
+
+  // And survives the departure being withdrawn: the row is handed back as an
+  // ordinary open day rather than deleted out from under the note.
+  const back = reconcileEntry(written, [], "E001", AT);
+  assert.equal(back.action, "write");
+  assert.equal(back.entry.status, "present");
+  assert.equal(back.entry.auto, undefined);
+  assert.equal(back.entry.remarks, "CALLED IN");
+});
+
+test("a completed day is a record, and is not rewritten", () => {
+  const rows = new Map([["E001|" + AT, worked]]);
+  assert.equal(reconcileEntries(rows, vacation, () => true), rows);
+});
+
+test("nothing to change hands the same map back, so nothing re-renders", () => {
+  const rows = new Map([["E001|" + AT, worked]]);
+  assert.equal(reconcileEntries(rows, [], () => false), rows);
+});
+
+test("reconciling a set writes only the rows the booking covers", () => {
+  const other = { ...worked, employeeId: "E002" };
+  const rows = new Map([
+    ["E001|" + AT, worked],
+    ["E002|" + AT, other],
+  ]);
+  const next = reconcileEntries(rows, vacation, () => false);
+  assert.notEqual(next, rows);
+  assert.equal(next.get("E001|" + AT).status, "vacation");
+  assert.equal(next.get("E002|" + AT).status, "present");
 });
 
 // -----------------------------------------------------------------------------
@@ -712,6 +818,83 @@ test("logistics holds all seven vehicle operators", () => {
   const logistics = DISPATCH_GROUPS.find((g) => g.id === "logistics");
   assert.equal(logistics.slots.length, 7);
   assert.ok(logistics.slots.every((s) => s.counts === "vehicleOperator"));
+});
+
+// -----------------------------------------------------------------------------
+// The sample plant. It ships filled in — a staff list, what is booked against
+// them, and who holds which post — because every screen in the module reads one
+// of those three and a blank one shows nothing of what it does.
+// -----------------------------------------------------------------------------
+console.log("\nSample plant");
+
+test("the sample fills the chart, and leaves a real vacancy on it", () => {
+  const posts = new Set(ALL_SLOTS.map((s) => s.id));
+  for (const slot of Object.keys(MOCK_CHART)) {
+    assert.ok(posts.has(slot), `${slot} is not a post on the chart`);
+  }
+  assert.equal(Object.keys(MOCK_CHART).length, ALL_SLOTS.length - 1);
+});
+
+test("nobody holds two posts", () => {
+  const held = Object.values(MOCK_CHART);
+  assert.equal(new Set(held).size, held.length);
+});
+
+test("every post is filled by somebody on the staff list", () => {
+  const ids = new Set(MOCK_EMPLOYEES.map((e) => e.id));
+  for (const id of Object.values(MOCK_CHART)) {
+    assert.ok(ids.has(id), `${id} holds a post but is not on the staff list`);
+  }
+});
+
+test("the departures cover every state the Status tab can be in", () => {
+  const open = MOCK_DEPARTURES.filter((d) => isOpenOn(d, MOCK_TODAY));
+  const past = MOCK_DEPARTURES.filter((d) => !isOpenOn(d, MOCK_TODAY));
+  assert.ok(open.length > 0, "nothing on the Status tab");
+  assert.ok(past.length > 0, "nothing in History");
+
+  assert.ok(
+    MOCK_DEPARTURES.some((d) => awayOn(MOCK_DEPARTURES, d.employeeId, MOCK_TODAY)),
+    "nobody is away today",
+  );
+  assert.ok(
+    MOCK_DEPARTURES.some((d) => d.type !== "exit" && !d.to),
+    "no open-ended spell",
+  );
+  assert.ok(
+    MOCK_DEPARTURES.some((d) => isBooked(MOCK_DEPARTURES, d.employeeId, MOCK_TODAY)),
+    "nothing booked ahead",
+  );
+  assert.ok(
+    MOCK_DEPARTURES.some((d) => isLeaving(MOCK_DEPARTURES, d.employeeId, MOCK_TODAY)),
+    "nobody is leaving",
+  );
+  assert.ok(
+    MOCK_DEPARTURES.some((d) => hasExited(MOCK_DEPARTURES, d.employeeId, MOCK_TODAY)),
+    "nobody has left",
+  );
+});
+
+test("every departure is against somebody who exists", () => {
+  const ids = new Set(MOCK_EMPLOYEES.map((e) => e.id));
+  for (const d of MOCK_DEPARTURES) assert.ok(ids.has(d.employeeId), d.employeeId);
+});
+
+test("the sheets agree with the departures they shipped with", () => {
+  for (const e of MOCK_ENTRIES) {
+    const wanted = bookedStatus(MOCK_DEPARTURES, e.employeeId, e.date);
+    if (wanted) {
+      assert.equal(e.status, wanted, `${e.employeeId} ${e.date}`);
+      assert.equal(e.start, undefined, `${e.employeeId} ${e.date} still has hours`);
+    }
+  }
+});
+
+test("somebody who has left has no rows from their last day on", () => {
+  for (const e of MOCK_ENTRIES) {
+    const exit = exitOf(MOCK_DEPARTURES, e.employeeId);
+    if (exit) assert.ok(e.date < exit.from, `${e.employeeId} has a row for ${e.date}`);
+  }
 });
 
 // -----------------------------------------------------------------------------

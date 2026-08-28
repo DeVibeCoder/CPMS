@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { attendanceSource } from "@/data/attendance";
+import {
+  entryKey as key,
+  reconcileEntries,
+  reconcileEntry,
+} from "@/lib/attendance/autoStatus";
 import { PLANT_SECTIONS, normaliseSection } from "@/lib/attendance/sections";
 import {
   departureFromPresence,
@@ -7,6 +12,7 @@ import {
   isOpenOn,
   presenceOf,
   upper,
+  wasEmployedOn,
 } from "@/lib/attendance/staff";
 import { clearState, loadState, saveState } from "@/lib/attendance/storage";
 import type {
@@ -28,7 +34,6 @@ import type { ParsedEmployee } from "@/lib/attendance/employeeCsv";
  * On a first visit — nothing stored — the sample is loaded so the timesheet and
  * master sheet have something to show.
  */
-const key = (employeeId: string, date: string) => `${employeeId}|${date}`;
 
 let departureSeq = 0;
 const newDepartureId = () =>
@@ -43,7 +48,7 @@ export interface Timesheets {
    * this, because a person leaving must not blank out the weeks they worked.
    */
   roster: Employee[];
-  /** On the books today. This is the staff list, and it excludes the sample. */
+  /** On the books today. This is the staff list — sample people included. */
   employees: Employee[];
   /** Left the plant. Kept, never deleted. */
   inactive: Employee[];
@@ -59,6 +64,15 @@ export interface Timesheets {
   months: string[];
   today: string;
   entryFor: (employeeId: string, date: string) => TimesheetEntry | undefined;
+  /**
+   * Write one day's rows from whatever is booked against each person.
+   *
+   * Covers the case the standing reconciliation cannot: a date nobody has
+   * opened yet has no rows to correct, so the vacation has to be *created* the
+   * first time the day is looked at. Safe to call repeatedly — it writes only
+   * where the row and the booking disagree.
+   */
+  syncDay: (date: string) => void;
   updateEntry: (
     employeeId: string,
     date: string,
@@ -85,7 +99,7 @@ export interface Timesheets {
    * actually leaves gets an exit date, which keeps their history.
    */
   removeEmployee: (employeeId: string) => void;
-  /** Delete every real employee. For clearing test data. */
+  /** Delete everybody, sample and all. For clearing test data. */
   removeAllEmployees: () => void;
   /** Book a spell away or an exit, now or for a date weeks off. */
   addDeparture: (departure: Omit<Departure, "id">) => { error?: string };
@@ -140,16 +154,23 @@ export function useTimesheets(): Timesheets {
           return;
         }
 
-        const [people, rows, done] = await Promise.all([
+        // A first visit gets the whole sample plant, not just its timesheets:
+        // the staff list, what is booked against them, and who holds which post.
+        // Every screen in the module reads one of those three, so seeding only
+        // the sheets left half the tabs blank with nothing to look at.
+        const [people, bookings, rows, done, posts] = await Promise.all([
           attendanceSource.listEmployees(),
+          attendanceSource.listDepartures(),
           attendanceSource.listEntries(),
           attendanceSource.listSubmittedDates(),
+          attendanceSource.listChart(),
         ]);
         if (cancelled) return;
         setRoster(people);
-        setDepartures([]);
+        setDepartures(bookings);
         setEntries(new Map(rows.map((r) => [key(r.employeeId, r.date), r])));
         setSubmitted(new Set(done));
+        setChart(posts);
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : "Could not load attendance.");
@@ -189,6 +210,54 @@ export function useTimesheets(): Timesheets {
     [entries],
   );
 
+  const isSubmitted = useCallback(
+    (date: string) => submitted.has(date),
+    [submitted],
+  );
+
+  /**
+   * Keep the timesheet in step with the Status tab, in both directions.
+   *
+   * Recording a vacation is one action, and it has to reach three screens: the
+   * staff list, the org chart and the timesheet. The first two read the
+   * departures directly and are never stale. The timesheet stores rows, and
+   * those rows are what the master sheet and every total add up — so a booked
+   * vacation has to be *written* onto the days it covers, and withdrawing it has
+   * to take those days back off again.
+   *
+   * Runs on the departures rather than on the entries: an edit to a row is not
+   * something to reconcile, and depending on the entries would have this write
+   * to the state it reads. Rows for days nobody has opened yet are created by
+   * `syncDay` when the day is first looked at. The rule itself lives in
+   * `lib/attendance/autoStatus.ts`, where it can be tested without React.
+   */
+  useEffect(() => {
+    if (loading) return;
+    setEntries((current) => reconcileEntries(current, departures, isSubmitted));
+  }, [loading, departures, isSubmitted]);
+
+  const syncDay = useCallback(
+    (date: string) => {
+      // A completed day is a record. A departure entered afterwards does not
+      // get to rewrite it — reopen the day to do that.
+      if (submitted.has(date)) return;
+      setEntries((current) => {
+        let next: Map<string, TimesheetEntry> | null = null;
+        for (const employee of roster) {
+          if (!wasEmployedOn(departures, employee.id, date)) continue;
+          const id = key(employee.id, date);
+          const result = reconcileEntry(current.get(id), departures, employee.id, date);
+          if (result.action === "keep") continue;
+          next ??= new Map(current);
+          if (result.action === "delete") next.delete(id);
+          else next.set(id, result.entry);
+        }
+        return next ?? current;
+      });
+    },
+    [roster, departures, submitted],
+  );
+
   const updateEntry = useCallback(
     (employeeId: string, date: string, patch: Partial<TimesheetEntry>) => {
       setEntries((current) => {
@@ -199,7 +268,18 @@ export function useTimesheets(): Timesheets {
           date,
           status: "present" as const,
         };
-        next.set(id, { ...existing, ...patch });
+        // Setting a status or a time by hand makes the row somebody's own:
+        // leaving the flag on would let a later reconciliation delete what they
+        // had just entered. A remark is not that — while a departure covers the
+        // day it is the only field still enabled, and writing one is not a claim
+        // on the day's status.
+        const claimed =
+          "status" in patch || "start" in patch || "end" in patch || "breaks" in patch;
+        next.set(id, {
+          ...existing,
+          ...patch,
+          ...(claimed ? { auto: undefined } : {}),
+        });
         return next;
       });
     },
@@ -339,19 +419,31 @@ export function useTimesheets(): Timesheets {
       for (const [k, v] of current) if (v.employeeId === employeeId) next.delete(k);
       return next;
     });
-  }, []);
-
-  /** Clear every real employee, leaving the sample sheets alone. */
-  const removeAllEmployees = useCallback(() => {
-    const doomed = new Set(roster.filter((e) => !e.sample).map((e) => e.id));
-    setRoster((current) => current.filter((e) => e.sample));
-    setDepartures((current) => current.filter((d) => !doomed.has(d.employeeId)));
-    setEntries((current) => {
-      const next = new Map(current);
-      for (const [k, v] of current) if (doomed.has(v.employeeId)) next.delete(k);
+    // Their post goes back to vacant. Left behind, the assignment would hold a
+    // staff number nothing resolves — a box reading VACANT that the chart still
+    // counted as taken, so nobody could be put in it.
+    setChart((current) => {
+      const held = Object.entries(current).find(([, id]) => id === employeeId);
+      if (!held) return current;
+      const next = { ...current };
+      delete next[held[0]];
       return next;
     });
-  }, [roster]);
+  }, []);
+
+  /**
+   * Clear the whole staff list — the sample people included.
+   *
+   * This is how a plant starts on its own data, so leaving the invented crew
+   * behind would defeat it: the point is an empty list to import into. "Reset to
+   * sample" brings them all back, so nothing is lost that cannot be had again.
+   */
+  const removeAllEmployees = useCallback(() => {
+    setRoster([]);
+    setDepartures([]);
+    setEntries(new Map());
+    setChart({});
+  }, []);
 
   const addDeparture = useCallback(
     (departure: Omit<Departure, "id">): { error?: string } => {
@@ -377,13 +469,19 @@ export function useTimesheets(): Timesheets {
   // The staff list and the inactive list are read off the roster against
   // today's date rather than stored, so somebody whose last day has arrived
   // moves across on their own. See `lib/attendance/staff.ts`.
+  //
+  // The sample people are on both lists like anybody else. They used to be
+  // hidden here so a plant would find an empty staff list, but that left every
+  // screen that reads the staff list — Status, History, the org chart — blank on
+  // first open, with no way to see what any of them do. A sample plant that can
+  // be cleared in one click is more use than an empty one.
   const employees = useMemo(
-    () => roster.filter((e) => !e.sample && !hasExited(departures, e.id, today)),
+    () => roster.filter((e) => !hasExited(departures, e.id, today)),
     [roster, departures, today],
   );
 
   const inactive = useMemo(
-    () => roster.filter((e) => !e.sample && hasExited(departures, e.id, today)),
+    () => roster.filter((e) => hasExited(departures, e.id, today)),
     [roster, departures, today],
   );
 
@@ -455,8 +553,9 @@ export function useTimesheets(): Timesheets {
     months,
     today,
     entryFor,
+    syncDay,
     updateEntry,
-    isSubmitted: (date: string) => submitted.has(date),
+    isSubmitted,
     submitDate: (date: string) =>
       setSubmitted((current) => new Set(current).add(date)),
     reopenDate: (date: string) =>

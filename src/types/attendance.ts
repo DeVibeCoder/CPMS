@@ -17,9 +17,12 @@ export interface Employee {
   department: string;
   position: string;
   /**
-   * Invented staff from `src/data/attendance`. They fill the timesheet and
-   * master sheet so those screens have something to read, and are kept off the
-   * staff list so it starts empty for a real plant's own people.
+   * Invented staff from `src/data/attendance`.
+   *
+   * They are on every list a real person is on — the module ships with a plant
+   * already in it so each screen can be checked against something before a real
+   * name is loaded. The flag is what "Reset to sample" restores them from, and
+   * what tells anybody reading a row that it is not a person.
    */
   sample?: boolean;
 }
@@ -132,6 +135,16 @@ export interface TimesheetEntry {
   end?: string;
   status: AttendanceStatus;
   remarks?: string;
+  /**
+   * Written from a booked departure rather than typed by a clerk.
+   *
+   * The flag is what lets a cancelled departure undo itself. Without it there
+   * is no way to tell a vacation row the Status tab wrote from one somebody set
+   * by hand on the timesheet, so removing the departure would either leave a
+   * stale vacation behind or wipe out a deliberate entry. See
+   * `lib/attendance/autoStatus.ts`.
+   */
+  auto?: boolean;
 }
 
 /** A day's entry with its arithmetic worked out. */

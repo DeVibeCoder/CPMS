@@ -219,20 +219,50 @@
      sidebar, header, tabs, toolbars — is chrome that would push the chart onto
      a second page and print nothing useful on the first.
 
-     Scoped to a class the chart puts on <html> only while its own Print button
-     is running, so printing a stock report from anywhere else is untouched. */
-  .printing-chart body * {
-    visibility: hidden;
+     Everything but the chart and the elements it hangs from is taken out of the
+     page entirely. Merely hiding it is not enough: an invisible sidebar still
+     occupies its full height, and the blank pages that follow the chart are that
+     height being printed. `onPrint` marks the chart's ancestors on the way past;
+     each of them then keeps only the child that leads to the chart.
+
+     All of it scoped to a class the chart puts on <html> for the length of its
+     own print, so printing a stock report from anywhere else is untouched. */
+  .printing-chart body > *:not(.chart-print-ancestor),
+  .printing-chart
+    .chart-print-ancestor
+    > *:not(.chart-print-ancestor):not(.print-sheet) {
+    display: none;
   }
-  .printing-chart .print-sheet,
-  .printing-chart .print-sheet * {
-    visibility: visible;
+
+  /* The shell's own layout goes with it — a sidebar's grid column or a page's
+     padding would otherwise indent the chart off the edge of the paper. */
+  .printing-chart .chart-print-ancestor {
+    display: block;
+    position: static;
+    margin: 0;
+    padding: 0;
+    width: auto;
+    max-width: none;
+    min-height: 0;
+    height: auto;
+    overflow: visible;
+    border: 0;
+    background: none;
+    box-shadow: none;
+    transform: none;
   }
+
   .printing-chart .print-sheet {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
+    /* The width comes from `.chart-page` below, not from the paper: the chart is
+       laid out at a known size and then scaled to fit, so what prints does not
+       depend on the window it was printed from. The factor is measured in JS
+       just before printing — see `OrgChartTab`'s `onPrint`. */
+    transform: scale(var(--chart-print-scale, 1));
+    transform-origin: top left;
+    /* Scaling is a paint-time transform: the box it leaves behind is still full
+       size and would run onto a second page. The height it actually occupies is
+       set from the same measurement that produced the scale. */
+    height: var(--chart-print-height, auto);
   }
 
   /* Faint status washes survive a printer only if backgrounds are kept. */
@@ -240,4 +270,60 @@
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
+}
+
+/* -----------------------------------------------------------------------------
+   The org chart's paper layout.
+
+   Deliberately outside `@media print`, because it is used for the PNG download
+   as well — the two produce the same sheet, and only one of them involves a
+   printer. `OrgChartTab` puts `.chart-page` on the chart for as long as a print
+   or a capture takes, and takes it off again.
+
+   The width is Letter landscape at 96px to the inch, less a 0.3in margin each
+   side: 11in − 0.6in = 10.4in = 998px. Everything inside then has a known width
+   to lay out against, instead of whatever the browser window happened to be.
+   -------------------------------------------------------------------------- */
+/* The sheet's own spacing lives here rather than in utilities, so the paper
+   version below can simply tighten it. A `space-y-*` utility could not be
+   overridden without out-specificity-ing Tailwind's own selector, which is a
+   worse thing to leave behind than four lines of ordinary CSS. */
+.chart-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.25rem;
+}
+
+.chart-page {
+  width: 998px;
+  max-width: none;
+  /* Every pixel of white space costs the whole chart its scale, since the sheet
+     is shrunk to whatever fits the page. Room to breathe on a screen is room
+     wasted on paper. */
+  gap: 1rem;
+  padding: 0.875rem;
+}
+
+/* The responsive breakpoints inside the chart are about the *window*, which is
+   not what is being laid out here. On paper the branches are always side by
+   side and the footnotes are always two columns — that is the shape of the
+   plant's own chart, and a one-column reflow would run off the bottom. */
+.chart-page .chart-branches,
+.chart-page .chart-notes {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* Three packing plants share half a landscape page, so the groups give up their
+   on-screen minimum and divide it evenly. Left at 210px they wrapped onto a
+   second row, which cost far more height than the narrower boxes cost width. */
+.chart-page .chart-group {
+  min-width: 0;
+}
+
+/* Anything that is a control rather than part of the chart. Hidden here rather
+   than with `print:hidden` so it is out of the PNG too — and so the height
+   measured before printing is the height that prints. */
+.chart-page .chart-screen-only {
+  display: none;
 }

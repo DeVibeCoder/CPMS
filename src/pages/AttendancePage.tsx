@@ -14,10 +14,11 @@ import { OrgChartTab } from "@/components/attendance/OrgChartTab";
  * Attendance — staff working hours.
  *
  * Under development and administrator-only. Nothing here reads or writes the
- * plant's reports, Supabase, or any HR system: the timesheets start from the
- * sample in `src/data/attendance`, and everything entered on top of it is kept
- * in the browser's local storage. That is enough to trial the module and is not
- * a backend — one machine, one browser, gone if site data is cleared.
+ * plant's reports, Supabase, or any HR system: a first visit loads an invented
+ * plant from `src/data/attendance` — staff, departures, timesheets and chart
+ * assignments — and everything entered on top of it is kept in the browser's
+ * local storage. That is enough to trial the module and is not a backend — one
+ * machine, one browser, gone if site data is cleared.
  *
  * The seam that will eventually carry real data is `attendanceSource`, and
  * swapping it is meant to leave every component on this page untouched.
