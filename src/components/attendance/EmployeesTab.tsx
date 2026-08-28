@@ -513,11 +513,18 @@ function StaffCard({
           <div className="line-clamp-2 break-words text-[13px] font-medium leading-snug">
             {employee.name}
           </div>
+          {/* Who they are, then what they do. Three things on one line meant
+              the designation was the part that got cut, and it is the part a
+              supervisor is usually reading the row for. */}
           <div className="truncate text-[11px] leading-tight text-muted-foreground">
             <span className="font-mono">{employee.id}</span>
             {employee.department ? ` · ${employee.department}` : ""}
-            {employee.position ? ` · ${employee.position}` : ""}
           </div>
+          {employee.position && (
+            <div className="truncate text-[11px] leading-tight text-muted-foreground">
+              {employee.position}
+            </div>
+          )}
           <RowNote employee={employee} sheets={sheets} />
         </div>
 

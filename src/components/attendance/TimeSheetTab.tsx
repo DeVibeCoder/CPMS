@@ -15,7 +15,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "@/hooks/use-toast";
-import { useIsMobile } from "@/hooks/useMediaQuery";
 import { cn } from "@/lib/utils";
 import {
   addDays,
@@ -54,7 +53,6 @@ export function TimeSheetTab({
   date: string;
   onDateChange: (date: string) => void;
 }) {
-  const isMobile = useIsMobile();
   const submitted = sheets.isSubmitted(date);
 
   // The whole roster, not just current staff: somebody who has since left still
@@ -171,184 +169,119 @@ export function TimeSheetTab({
         />
       </div>
 
-      {isMobile ? (
-        <div className="space-y-2">
-          {rows.map(({ employee, entry, totals, away }) => {
-            const locked = submitted || Boolean(away);
-            return (
-              <Card key={employee.id} className={cn(away && departureTint(away.type))}>
-                <CardContent className="space-y-2 p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="truncate font-medium">{employee.name}</div>
-                      <div className="font-mono text-[11px] text-muted-foreground">
-                        {employee.id}
+      {/* One table, on every screen. The cards this replaced showed one person
+          at a time, and a timesheet is read across people — whose hours are
+          missing, who is still out — which a column answers at a glance and a
+          stack of cards does not. It scrolls sideways on a phone, which is the
+          honest cost of nine columns. */}
+      <Card>
+        <CardContent className="p-0">
+          {/*
+            Nine columns of a plant's working day do not fit a laptop, so the
+            table is given the width it actually needs and the card scrolls
+            sideways. Left to divide up whatever was going, the browser took it
+            out of the narrowest columns — and those are Start, Breaks and End,
+            which then clipped the very times the sheet exists to record.
+
+            The cell padding is halved here for the same reason: at the shared
+            px-4 the padding alone was 288px of the row, more than three time
+            columns' worth.
+          */}
+          <Table className="min-w-[1060px] [&_td]:px-2 [&_th]:px-2 [&_td:first-child]:pl-4 [&_th:first-child]:pl-4 [&_td:last-child]:pr-4 [&_th:last-child]:pr-4">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[64px] sm:w-[86px]">Emp ID</TableHead>
+                <TableHead className="min-w-[128px] sm:min-w-[170px]">Name</TableHead>
+                <TableHead className="w-[74px] sm:w-[92px]">Start</TableHead>
+                <TableHead className="w-[96px] sm:w-[120px]">Breaks</TableHead>
+                <TableHead className="w-[74px] sm:w-[92px]">End</TableHead>
+                <TableHead className="w-[76px] text-right sm:w-[96px]">Total Hrs</TableHead>
+                <TableHead className="w-[70px] text-right sm:w-[88px]">OT Hrs</TableHead>
+                <TableHead className="w-[104px] sm:w-[132px]">Status</TableHead>
+                <TableHead className="min-w-[130px] sm:min-w-[160px]">Remarks</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map(({ employee, entry, totals, away }) => {
+                // A booked absence owns the row: the times are meaningless
+                // and the status is not a choice while it runs.
+                // A booked absence owns the row as completely as a sign-off
+                // does: there are no hours to record on a day somebody was
+                // not here, and the status is not this screen's to argue with.
+                const locked = submitted || Boolean(away);
+
+                return (
+                  <TableRow
+                    key={employee.id}
+                    className={cn(away && departureTint(away.type))}
+                  >
+                    <TableCell className="font-mono text-[10px] sm:text-xs">
+                      {employee.id}
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-medium leading-tight">
+                        {employee.name}
                       </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-semibold tabular-nums">
-                        {formatDuration(totals.workedMinutes)}
+                      <div className="text-[11px] text-muted-foreground">
+                        {employee.department}
                       </div>
-                      {totals.overtimeMinutes > 0 && (
-                        <div className="text-[11px] text-primary">
-                          OT {formatDuration(totals.overtimeMinutes)}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <TimeField
-                      label="Start"
-                      value={entry?.start}
-                      disabled={locked}
-                      onChange={(v) => set(employee.id, { start: v })}
-                    />
-                    <div>
-                      <div className="mb-0.5 text-[10px] uppercase text-muted-foreground">
-                        Breaks
-                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <TimeField
+                        aria-label={`Start for ${employee.name}`}
+                        value={entry?.start}
+                        disabled={locked}
+                        onChange={(v) => set(employee.id, { start: v })}
+                      />
+                    </TableCell>
+                    <TableCell>
                       <BreaksField
                         entry={entry}
                         disabled={locked}
                         onChange={(breaks) => set(employee.id, { breaks })}
                       />
-                    </div>
-                    <TimeField
-                      label="End"
-                      value={entry?.end}
-                      disabled={locked}
-                      onChange={(v) => set(employee.id, { end: v })}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 items-center gap-2">
-                    {/* Wrapped, or the badge is blockified as a grid item and
-                        stretches across half the card. */}
-                    <div className="justify-self-start">
+                    </TableCell>
+                    <TableCell>
+                      <TimeField
+                        aria-label={`End for ${employee.name}`}
+                        value={entry?.end}
+                        disabled={locked}
+                        onChange={(v) => set(employee.id, { end: v })}
+                      />
+                    </TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums">
+                      {formatDuration(totals.workedMinutes)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {totals.overtimeMinutes > 0 ? (
+                        <span className="text-primary">
+                          {formatDuration(totals.overtimeMinutes)}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
                       <StatusBadge status={entry?.status ?? "present"} />
-                    </div>
-                    <Input
-                      className="h-9"
-                      placeholder="Remarks"
-                      disabled={submitted}
-                      value={entry?.remarks ?? ""}
-                      onChange={(e) => set(employee.id, { remarks: e.target.value })}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      ) : (
-        <Card>
-          <CardContent className="p-0">
-            {/*
-              Nine columns of a plant's working day do not fit a laptop, so the
-              table is given the width it actually needs and the card scrolls
-              sideways. Left to divide up whatever was going, the browser took it
-              out of the narrowest columns — and those are Start, Breaks and End,
-              which then clipped the very times the sheet exists to record.
-
-              The cell padding is halved here for the same reason: at the shared
-              px-4 the padding alone was 288px of the row, more than three time
-              columns' worth.
-            */}
-            <Table className="min-w-[1060px] [&_td]:px-2 [&_th]:px-2 [&_td:first-child]:pl-4 [&_th:first-child]:pl-4 [&_td:last-child]:pr-4 [&_th:last-child]:pr-4">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[86px]">Emp ID</TableHead>
-                  <TableHead className="min-w-[170px]">Name</TableHead>
-                  <TableHead className="w-[92px]">Start</TableHead>
-                  <TableHead className="w-[120px]">Breaks</TableHead>
-                  <TableHead className="w-[92px]">End</TableHead>
-                  <TableHead className="w-[96px] text-right">Total Hrs</TableHead>
-                  <TableHead className="w-[88px] text-right">OT Hrs</TableHead>
-                  <TableHead className="w-[132px]">Status</TableHead>
-                  <TableHead className="min-w-[160px]">Remarks</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map(({ employee, entry, totals, away }) => {
-                  // A booked absence owns the row: the times are meaningless
-                  // and the status is not a choice while it runs.
-                  // A booked absence owns the row as completely as a sign-off
-                  // does: there are no hours to record on a day somebody was
-                  // not here, and the status is not this screen's to argue with.
-                  const locked = submitted || Boolean(away);
-
-                  return (
-                    <TableRow
-                      key={employee.id}
-                      className={cn(away && departureTint(away.type))}
-                    >
-                      <TableCell className="font-mono text-xs">
-                        {employee.id}
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium leading-tight">
-                          {employee.name}
-                        </div>
-                        <div className="text-[11px] text-muted-foreground">
-                          {employee.department}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <TimeField
-                          aria-label={`Start for ${employee.name}`}
-                          value={entry?.start}
-                          disabled={locked}
-                          onChange={(v) => set(employee.id, { start: v })}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <BreaksField
-                          entry={entry}
-                          disabled={locked}
-                          onChange={(breaks) => set(employee.id, { breaks })}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <TimeField
-                          aria-label={`End for ${employee.name}`}
-                          value={entry?.end}
-                          disabled={locked}
-                          onChange={(v) => set(employee.id, { end: v })}
-                        />
-                      </TableCell>
-                      <TableCell className="text-right font-semibold tabular-nums">
-                        {formatDuration(totals.workedMinutes)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {totals.overtimeMinutes > 0 ? (
-                          <span className="text-primary">
-                            {formatDuration(totals.overtimeMinutes)}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <StatusBadge status={entry?.status ?? "present"} />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          className="h-8"
-                          placeholder="—"
-                          disabled={submitted}
-                          value={entry?.remarks ?? ""}
-                          onChange={(e) =>
-                            set(employee.id, { remarks: e.target.value })
-                          }
-                        />
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        className="h-8"
+                        placeholder="—"
+                        disabled={submitted}
+                        value={entry?.remarks ?? ""}
+                        onChange={(e) =>
+                          set(employee.id, { remarks: e.target.value })
+                        }
+                      />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
       {/* Sign-off */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3">
