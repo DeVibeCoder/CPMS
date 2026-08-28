@@ -316,16 +316,19 @@
   --org-band: 210 45% 42%;
 }
 
-/* The sheet. A fixed width on screen too, inside a scroller, so what is on the
-   screen is the same drawing that comes off the printer rather than a reflowed
-   cousin of it. */
+/* The sheet. Sized to its own drawing rather than to whatever box it is in, so
+   what is on the screen is the same chart that comes off the printer rather
+   than a reflowed cousin of it. How wide that drawing is comes from --org-col,
+   which `OrgChartTab` sets to whatever fits — the window on screen, the page on
+   paper. Centred, because below the widest column width it stops filling the
+   frame and a chart pinned to the left edge reads as a mistake. */
 .chart-sheet {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
   padding: 1.25rem;
   width: max-content;
-  min-width: 100%;
+  margin-inline: auto;
 }
 
 /* -- the joins ------------------------------------------------------------- */
@@ -472,7 +475,6 @@
    ancestor and would otherwise still be in force.
    -------------------------------------------------------------------------- */
 .chart-page {
-  min-width: 0;
   gap: 0.75rem;
   padding: 0.5rem;
 

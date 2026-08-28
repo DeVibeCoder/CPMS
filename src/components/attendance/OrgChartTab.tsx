@@ -1,4 +1,11 @@
-import { useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { Download, Printer, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -97,8 +104,17 @@ const PRINTABLE = {
   height: (PAGE.height - 2 * PAGE.margin) * CSS_DPI,
 };
 
-/** How wide one column of posts may be squeezed or stretched to fit the page. */
-const COLUMN_RANGE = { min: 110, max: 340 };
+/**
+ * How wide one column of posts may be squeezed or stretched.
+ *
+ * Paper may go narrower than a screen because it is scaled afterwards anyway,
+ * and it may go wider because filling the page is the whole point. On screen the
+ * ceiling is a readable size rather than a stretched one, and the floor is where
+ * a name stops fitting in a box — past that the chart is left alone to scroll,
+ * which is better than a column of clipped names.
+ */
+const PAPER_COLUMN = { min: 110, max: 340 };
+const SCREEN_COLUMN = { min: 132, max: 200 };
 
 /** Red for an exit, blue for a vacation — the same colours the tabs use. */
 const SLOT_STYLE: Record<SlotState, string> = {
@@ -114,6 +130,8 @@ const SLOT_STYLE: Record<SlotState, string> = {
 export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
   const [editing, setEditing] = useState<ChartSlot | null>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
+  /** The scroller the chart is drawn into. What "fits on screen" is measured. */
+  const frameRef = useRef<HTMLDivElement>(null);
   const [saving, setSaving] = useState(false);
 
   const isAdmin = useAuth((s) => s.user?.role === "admin");
@@ -174,8 +192,8 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
    * land within a pixel, and each one costs a single reflow.
    */
   const fitToPage = (sheet: HTMLDivElement): number => {
-    let narrow = COLUMN_RANGE.min;
-    let wide = COLUMN_RANGE.max;
+    let narrow = PAPER_COLUMN.min;
+    let wide = PAPER_COLUMN.max;
 
     for (let i = 0; i < 9; i += 1) {
       const column = (narrow + wide) / 2;
@@ -201,6 +219,47 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
   };
 
   /**
+   * Size the chart to the space it has on screen.
+   *
+   * The chart is drawn at a fixed width rather than reflowed, so without this it
+   * simply runs off the side of its scroller — which is what it was doing, with
+   * the last packing plant parked out of sight to the right. The same column
+   * width the print uses is searched for here against the frame instead of the
+   * page, so the whole chart is on screen at whatever size the window allows.
+   *
+   * Below the readable floor it stops shrinking and the frame scrolls: a chart
+   * nobody can read is worse than one they have to scroll.
+   */
+  const fitToFrame = useCallback(() => {
+    const frame = frameRef.current;
+    const sheet = sheetRef.current;
+    // Never while a print or a capture is running — that has the chart sized to
+    // the page, and a window resize behind the print dialog must not touch it.
+    if (!frame || !sheet || sheet.classList.contains("chart-page")) return;
+
+    const available = frame.clientWidth;
+    let narrow = SCREEN_COLUMN.min;
+    let wide = SCREEN_COLUMN.max;
+
+    for (let i = 0; i < 8; i += 1) {
+      const column = (narrow + wide) / 2;
+      sheet.style.setProperty("--org-col", `${column}px`);
+      if (sheet.offsetWidth <= available) narrow = column;
+      else wide = column;
+    }
+    sheet.style.setProperty("--org-col", `${narrow}px`);
+  }, []);
+
+  useEffect(() => {
+    fitToFrame();
+    const frame = frameRef.current;
+    if (!frame || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(fitToFrame);
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [fitToFrame]);
+
+  /**
    * Lay the chart out on a sheet of paper, do something with it, put it back.
    *
    * Both the printer and the PNG want the same thing: the chart on one page,
@@ -217,8 +276,9 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
     try {
       return await run(sheet, fitToPage(sheet));
     } finally {
-      sheet.style.removeProperty("--org-col");
       sheet.classList.remove("chart-page");
+      // Back to the size the window allows, rather than the size the page did.
+      fitToFrame();
     }
   };
 
@@ -449,7 +509,10 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
 
       {/* The chart keeps its drawn width and scrolls rather than reflowing, so
           what is on the screen is the drawing that comes off the printer. */}
-      <div className="overflow-x-auto rounded-lg border border-border bg-card scrollbar-thin">
+      <div
+        ref={frameRef}
+        className="overflow-x-auto rounded-lg border border-border bg-card scrollbar-thin"
+      >
         {/* `print-sheet` is what the print stylesheet scopes to, and
             `chart-page` is added to this same element while a print or a
             download is running — see `onPaper`. Nothing here uses `print:`
