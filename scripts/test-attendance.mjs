@@ -779,7 +779,7 @@ test("reconciling a set writes only the rows the booking covers", () => {
 // -----------------------------------------------------------------------------
 // The org chart. Posts, not people — the shape is fixed and who fills it is not.
 // -----------------------------------------------------------------------------
-const { ALL_SLOTS, PLANT_GROUPS, DISPATCH_GROUPS } = await import(
+const { ALL_SLOTS, PLANT_GROUPS, DISPATCH_GROUPS, groupColumns } = await import(
   "../src/lib/attendance/orgChart.ts"
 );
 
@@ -818,6 +818,33 @@ test("logistics holds all seven vehicle operators", () => {
   const logistics = DISPATCH_GROUPS.find((g) => g.id === "logistics");
   assert.equal(logistics.slots.length, 7);
   assert.ok(logistics.slots.every((s) => s.counts === "vehicleOperator"));
+});
+
+test("logistics is drawn as one column per designation", () => {
+  const logistics = DISPATCH_GROUPS.find((g) => g.id === "logistics");
+  const columns = groupColumns(logistics);
+  assert.deepEqual(
+    columns.map((c) => c.length),
+    [3, 3, 1],
+    "three heavy vehicle, three forklift, one pickup",
+  );
+  for (const column of columns) {
+    assert.equal(new Set(column.map((s) => s.title)).size, 1);
+  }
+});
+
+test("every other team is one column, in the order the posts are declared", () => {
+  for (const group of [...PLANT_GROUPS, DISPATCH_GROUPS[1]]) {
+    const columns = groupColumns(group);
+    assert.equal(columns.length, 1, group.id);
+    assert.deepEqual(columns[0], group.slots);
+  }
+});
+
+test("splitting into columns loses nobody", () => {
+  for (const group of [...DISPATCH_GROUPS, ...PLANT_GROUPS]) {
+    assert.deepEqual(groupColumns(group).flat(), group.slots, group.id);
+  }
 });
 
 // -----------------------------------------------------------------------------

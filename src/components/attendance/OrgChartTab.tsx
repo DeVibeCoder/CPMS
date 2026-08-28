@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type CSSProperties } from "react";
 import { Download, Printer, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ import {
   PLANT_GROUPS,
   SUPERVISOR_DISPATCH,
   SUPERVISOR_PRODUCTION,
+  groupColumns,
   type ChartGroup,
   type ChartSlot,
 } from "@/lib/attendance/orgChart";
@@ -46,7 +47,14 @@ import { EmployeePicker } from "./StatusTab";
  * designation, still red — because a red empty box is a post the plant has to
  * fill, and blanking it would quietly shrink the establishment instead.
  */
-type SlotState = "vacant" | "filled" | "leaving" | "gone" | "vacation" | "away";
+type SlotState =
+  | "vacant"
+  | "filled"
+  | "leaving"
+  | "gone"
+  | "vacation"
+  | "sick"
+  | "off-site";
 
 function slotState(
   employee: Employee | undefined,
@@ -57,9 +65,11 @@ function slotState(
   if (hasExited(departures, employee.id, today)) return "gone";
   if (isLeaving(departures, employee.id, today)) return "leaving";
 
+  // A spell away keeps the colour it has on every other screen. Folding sick
+  // and off site into one "away" wash made a sick man and a man on another
+  // island the same colour, which is the one thing the palette exists to stop.
   const away = awayOn(departures, employee.id, today);
-  if (away?.type === "vacation") return "vacation";
-  if (away) return "away";
+  if (away) return away.type as SlotState;
   return "filled";
 }
 
@@ -87,14 +97,18 @@ const PRINTABLE = {
   height: (PAGE.height - 2 * PAGE.margin) * CSS_DPI,
 };
 
+/** How wide one column of posts may be squeezed or stretched to fit the page. */
+const COLUMN_RANGE = { min: 110, max: 340 };
+
 /** Red for an exit, blue for a vacation — the same colours the tabs use. */
 const SLOT_STYLE: Record<SlotState, string> = {
-  vacant: "border-dashed border-border bg-muted/30 text-muted-foreground",
-  filled: "border-border bg-card",
-  leaving: "border-destructive/50 bg-destructive/[0.08]",
-  gone: "border-dashed border-destructive/60 bg-destructive/[0.08]",
-  vacation: "border-info/50 bg-info/[0.10]",
-  away: "border-warning/50 bg-warning/[0.10]",
+  vacant: "border border-dashed border-border bg-muted/40",
+  filled: "border border-border bg-card",
+  leaving: "border border-destructive/50 bg-destructive/[0.08]",
+  gone: "border border-dashed border-destructive/60 bg-destructive/[0.08]",
+  vacation: "border border-info/50 bg-info/[0.10]",
+  sick: "border border-success/50 bg-success/[0.10]",
+  "off-site": "border border-warning/50 bg-warning/[0.10]",
 };
 
 export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
@@ -146,27 +160,64 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
   }, [sheets.employees, sheets.chart, editing]);
 
   /**
+   * Set the chart's column width so it fills the page, and return what is left
+   * to scale.
+   *
+   * Scaling alone fits the chart but does not *use* the page: a drawing taller
+   * than it is wide shrinks until its height fits and leaves a band of white
+   * down both sides. What decides the chart's proportions is the width of one
+   * column of posts — the boxes are a fixed height, so widening the columns
+   * makes the chart wider without making it any shorter.
+   *
+   * So the column width is searched for rather than chosen. Widen while the
+   * chart still has width to spare, narrow once it has run out; nine halvings
+   * land within a pixel, and each one costs a single reflow.
+   */
+  const fitToPage = (sheet: HTMLDivElement): number => {
+    let narrow = COLUMN_RANGE.min;
+    let wide = COLUMN_RANGE.max;
+
+    for (let i = 0; i < 9; i += 1) {
+      const column = (narrow + wide) / 2;
+      sheet.style.setProperty("--org-col", `${column}px`);
+      if (
+        PRINTABLE.width / sheet.offsetWidth >
+        PRINTABLE.height / sheet.offsetHeight
+      ) {
+        narrow = column;
+      } else {
+        wide = column;
+      }
+    }
+
+    sheet.style.setProperty("--org-col", `${narrow}px`);
+    // Never blown up past its natural size: a chart already smaller than the
+    // page is a small chart, not a reason to interpolate it larger.
+    return Math.min(
+      1,
+      PRINTABLE.width / sheet.offsetWidth,
+      PRINTABLE.height / sheet.offsetHeight,
+    );
+  };
+
+  /**
    * Lay the chart out on a sheet of paper, do something with it, put it back.
    *
-   * Both the printer and the PNG want the same thing: the chart at a fixed
-   * width, in the two-column form, with the on-screen furniture gone. On screen
-   * it is responsive, and what it happens to look like in this browser window is
-   * not what should come out of a printer — a chart that reflows to one column
-   * on a laptop would print as a two-page ribbon.
-   *
-   * So the paper layout is a class, applied for as long as the capture takes and
-   * removed in a `finally` so a cancelled print dialog cannot leave the page
-   * stuck in it.
+   * Both the printer and the PNG want the same thing: the chart on one page,
+   * filling it, with the on-screen furniture gone. So the paper layout is a
+   * class, applied for as long as the capture takes and removed in a `finally`
+   * so a cancelled print dialog cannot leave the page stuck in it.
    */
   const onPaper = async <T,>(
-    run: (sheet: HTMLDivElement) => T | Promise<T>,
+    run: (sheet: HTMLDivElement, scale: number) => T | Promise<T>,
   ): Promise<T | undefined> => {
     const sheet = sheetRef.current;
     if (!sheet) return undefined;
     sheet.classList.add("chart-page");
     try {
-      return await run(sheet);
+      return await run(sheet, fitToPage(sheet));
     } finally {
+      sheet.style.removeProperty("--org-col");
       sheet.classList.remove("chart-page");
     }
   };
@@ -174,32 +225,15 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
   /**
    * Print the chart on one Letter page, landscape.
    *
-   * Two things have to be said, and neither can be said in the stylesheet alone.
    * The paper is chosen by an `@page` rule, which has no selector and so cannot
    * be scoped to this component — it is injected for the duration of the print
    * and taken out again, otherwise printing a stock report from anywhere else in
    * the app would come out landscape too.
-   *
-   * The fit is the other. Whether the chart is shorter or taller than the page
-   * depends on how many posts the chart has, so it is measured and scaled rather
-   * than guessed at; `Math.min(1, …)` keeps a chart that already fits at its
-   * proper size instead of blowing it up to fill the sheet.
    */
   const onPrint = () =>
-    onPaper((sheet) => {
+    onPaper((sheet, scale) => {
       const root = document.documentElement;
-      const scale = Math.min(
-        1,
-        PRINTABLE.width / sheet.offsetWidth,
-        PRINTABLE.height / sheet.offsetHeight,
-      );
       root.style.setProperty("--chart-print-scale", String(scale));
-      // A scale is painted, not laid out: the box keeps its full height and
-      // would carry a second, empty page behind it. See the print stylesheet.
-      root.style.setProperty(
-        "--chart-print-height",
-        `${Math.ceil(sheet.offsetHeight * scale)}px`,
-      );
 
       // Everything between the chart and <body> is marked so the print
       // stylesheet can keep the chain and drop the rest of the app.
@@ -223,22 +257,20 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
       } finally {
         root.classList.remove("printing-chart");
         root.style.removeProperty("--chart-print-scale");
-        root.style.removeProperty("--chart-print-height");
         for (const el of ancestors) el.classList.remove("chart-print-ancestor");
         page.remove();
       }
     });
 
   /**
-   * Download the chart as a PNG, on the same Letter landscape page.
+   * Download the chart as a PNG, on the same page.
    *
    * An image rather than a PDF: this gets pasted into notices and messages, and
    * the library is already in the bundle for the report exports.
    *
    * The capture is then drawn onto a page-shaped canvas rather than saved as it
    * comes, so the file somebody prints from their phone is the sheet the Print
-   * button produces — same paper, same margins, same fit — instead of a
-   * chart-shaped image the printer has to guess how to place.
+   * button produces — same paper, same margins, same fit.
    */
   const onDownload = async () => {
     setSaving(true);
@@ -303,9 +335,41 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
     }
   };
 
-  const Slot = ({ slot, wide }: { slot: ChartSlot; wide?: boolean }) => {
+  /**
+   * A command post — the manager, the supervisors, the dispatch officer.
+   *
+   * Dark, so the line of command reads down the page before any name does. Its
+   * width is tied to the column width, so the whole chart re-proportions off
+   * that one variable when it is fitted to paper.
+   */
+  const LeadBox = ({ slot, deep }: { slot: ChartSlot; deep?: boolean }) => {
     const { employee, state } = held(slot);
     const gone = state === "gone";
+    return (
+      <button
+        type="button"
+        disabled={!isAdmin}
+        onClick={() => isAdmin && setEditing(slot)}
+        className={cn(
+          "org-box org-lead transition-opacity",
+          deep && "org-lead--deep",
+          isAdmin ? "cursor-pointer hover:opacity-90" : "cursor-default",
+        )}
+      >
+        <div className="w-full truncate text-[12px] font-bold leading-tight">
+          {employee && !gone ? employee.name : "VACANT"}
+        </div>
+        <div className="w-full truncate text-[10px] leading-tight text-white/70">
+          {slot.title}
+        </div>
+      </button>
+    );
+  };
+
+  /** One post on the shop floor. */
+  const SlotBox = ({ slot }: { slot: ChartSlot }) => {
+    const { employee, state } = held(slot);
+    const empty = state === "vacant" || state === "gone";
 
     return (
       <button
@@ -313,39 +377,53 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
         disabled={!isAdmin}
         onClick={() => isAdmin && setEditing(slot)}
         className={cn(
-          "w-full rounded-md border px-3 py-2 text-center transition-colors",
+          "org-box w-full transition-colors",
           SLOT_STYLE[state],
-          isAdmin && "cursor-pointer hover:border-primary/60",
-          !isAdmin && "cursor-default",
-          wide && "px-4 py-2.5",
+          isAdmin ? "cursor-pointer hover:border-primary/60" : "cursor-default",
         )}
       >
         <div
           className={cn(
-            "text-[13px] font-semibold leading-tight",
-            (state === "vacant" || gone) && "text-muted-foreground",
-            gone && "text-destructive/80",
+            "w-full truncate text-[12px] font-semibold leading-tight",
+            empty && "text-muted-foreground",
+            state === "gone" && "text-destructive/80",
           )}
         >
-          {employee && !gone ? employee.name : "VACANT"}
+          {employee && state !== "gone" ? employee.name : "VACANT"}
         </div>
-        <div className="text-[11px] leading-tight text-muted-foreground">
+        <div className="w-full truncate text-[10px] leading-tight text-muted-foreground">
           {slot.title}
         </div>
       </button>
     );
   };
 
-  const Group = ({ group }: { group: ChartGroup }) => (
-    <div className="chart-group min-w-[210px] flex-1 space-y-1.5">
-      <div className="rounded-md bg-primary/85 px-3 py-1.5 text-center text-[13px] font-bold tracking-wide text-primary-foreground">
-        {group.label}
+  /** The band naming a team, and the posts hanging off it. */
+  const Group = ({ group }: { group: ChartGroup }) => {
+    const columns = groupColumns(group);
+    return (
+      <div>
+        <div
+          className="org-box org-band"
+          style={{ "--org-span": columns.length } as CSSProperties}
+        >
+          <span className="truncate text-[11px] font-bold tracking-wide">
+            {group.label}
+          </span>
+        </div>
+        <div className="org-stem" />
+        <div className="org-fan">
+          {columns.map((column) => (
+            <div key={column[0].id} className="org-chain">
+              {column.map((slot) => (
+                <SlotBox key={slot.id} slot={slot} />
+              ))}
+            </div>
+          ))}
+        </div>
       </div>
-      {group.slots.map((s) => (
-        <Slot key={s.id} slot={s} />
-      ))}
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="space-y-3">
@@ -369,148 +447,160 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
         </div>
       </div>
 
-      {/* `print-sheet` is what the print stylesheet scopes to, and `chart-page`
-          is added to this same element while a print or a download is running —
-          see `onPaper`. Nothing here uses `print:` utilities: the layout is
-          measured just before printing, and a rule that changed it afterwards
-          would make that measurement a lie. */}
-      <div
-        ref={sheetRef}
-        className="print-sheet chart-sheet rounded-lg border border-border bg-card"
-      >
-        <div className="border-b border-border pb-3 text-center">
-          <h2 className="text-lg font-bold tracking-tight">{CHART_TITLE}</h2>
-        </div>
-
-        {/* Manager */}
-        <div className="mx-auto max-w-[280px]">
-          <div className="rounded-md bg-foreground px-4 py-2.5 text-center text-background">
-            <div className="text-[13px] font-bold">
-              {held(MANAGER).employee?.name ?? "VACANT"}
-            </div>
-            <div className="text-[11px] opacity-80">{MANAGER.title}</div>
-          </div>
-          {isAdmin && (
-            <button
-              type="button"
-              className="chart-screen-only mt-1 w-full text-center text-[10px] text-muted-foreground underline-offset-2 hover:underline"
-              onClick={() => setEditing(MANAGER)}
-            >
-              assign
-            </button>
-          )}
-        </div>
-
-        {/* The two branches */}
-        <div className="chart-branches grid gap-6 lg:grid-cols-2">
-          <div className="space-y-3">
-            <div className="mx-auto max-w-[320px] space-y-1.5">
-              <Slot slot={SUPERVISOR_DISPATCH} wide />
-              <Slot slot={DISPATCH_OFFICER} wide />
-            </div>
-            <div className="flex flex-wrap gap-3">
-              {DISPATCH_GROUPS.map((g) => (
-                <Group key={g.id} group={g} />
-              ))}
-            </div>
+      {/* The chart keeps its drawn width and scrolls rather than reflowing, so
+          what is on the screen is the drawing that comes off the printer. */}
+      <div className="overflow-x-auto rounded-lg border border-border bg-card scrollbar-thin">
+        {/* `print-sheet` is what the print stylesheet scopes to, and
+            `chart-page` is added to this same element while a print or a
+            download is running — see `onPaper`. Nothing here uses `print:`
+            utilities: the layout is measured just before printing, and a rule
+            that changed it afterwards would make that measurement a lie. */}
+        <div ref={sheetRef} className="print-sheet chart-sheet">
+          <div className="border-b border-border pb-2 text-center">
+            <h2 className="text-[19px] font-bold tracking-tight">{CHART_TITLE}</h2>
           </div>
 
-          <div className="space-y-3">
-            <div className="mx-auto max-w-[320px]">
-              <Slot slot={SUPERVISOR_PRODUCTION} wide />
-            </div>
-            <div className="flex flex-wrap gap-3">
-              {PLANT_GROUPS.map((g) => (
-                <Group key={g.id} group={g} />
-              ))}
-            </div>
-          </div>
-        </div>
+          <div>
+            <LeadBox slot={MANAGER} deep />
+            <div className="org-stem" />
 
-        {/* Jumbo points — shown, but not counted. */}
-        <div className="rounded-lg border border-border bg-muted/20 p-4">
-          <div className="flex flex-wrap justify-center gap-3">
-            {JUMBO_POINTS.map((p) => (
-              <div key={p.id} className="min-w-[150px] flex-1 space-y-1.5">
-                <div className="rounded-md bg-primary/85 px-3 py-1.5 text-center text-[12px] font-bold tracking-wide text-primary-foreground">
-                  {p.label}
+            <div className="org-fan org-fan--branches">
+              {/* Dispatch — one level deeper than production, because the
+                  dispatch officer sits between the supervisor and the teams. */}
+              <div className="org-branch">
+                <LeadBox slot={SUPERVISOR_DISPATCH} />
+                <div className="org-stem" />
+                <LeadBox slot={DISPATCH_OFFICER} deep />
+                <div className="org-stem" />
+                <div className="org-fan">
+                  {DISPATCH_GROUPS.map((g) => (
+                    <Group key={g.id} group={g} />
+                  ))}
                 </div>
-                {p.crew.map((line) => (
-                  <div
-                    key={line}
-                    className="rounded-md border border-border bg-card px-3 py-1.5 text-center text-[11px] text-muted-foreground"
-                  >
-                    {line}
-                  </div>
-                ))}
               </div>
-            ))}
+
+              {/* Production. The long stem stands in for the dispatch officer's
+                  row, so the two sets of team bands line up across the page. */}
+              <div className="org-branch">
+                <LeadBox slot={SUPERVISOR_PRODUCTION} />
+                <div className="org-stem org-stem--past-officer" />
+                <div className="org-fan">
+                  {PLANT_GROUPS.map((g) => (
+                    <Group key={g.id} group={g} />
+                  ))}
+                </div>
+
+                {/* Jumbo points hang under the plants rather than beside them:
+                    they are the same crews on a different line, which is what
+                    the note under them says and why they are not counted. */}
+                <div className="org-stem" />
+                <div className="rounded-lg border border-border bg-muted/25 p-3">
+                  <div className="org-fan">
+                    {JUMBO_POINTS.map((point) => (
+                      <div key={point.id}>
+                        <div className="org-box org-band org-crew">
+                          <span className="truncate text-[10px] font-bold tracking-wide">
+                            {point.label}
+                          </span>
+                        </div>
+                        <div className="org-stem" />
+                        <div className="org-chain">
+                          {point.crew.map((line) => (
+                            <div
+                              key={line}
+                              className="org-box org-crew border border-border bg-card text-[10px] text-muted-foreground"
+                            >
+                              {line}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-2.5 text-center text-[11px] font-medium">
+                    {JUMBO_NOTE}
+                  </p>
+                  <p className="mt-0.5 text-center text-[10px] text-muted-foreground">
+                    {JUMBO_SUBNOTE}
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
-          <p className="mt-3 text-center text-[12px] font-medium">{JUMBO_NOTE}</p>
-          <p className="mt-1 text-center text-[11px] text-muted-foreground">
-            {JUMBO_SUBNOTE}
+
+          {/* Footnotes. Manpower is counted off the chart; capacity is not, and
+              is reproduced from the plant's own sheet. */}
+          <div className="grid grid-cols-2 gap-8 border-t border-border pt-3">
+            <div>
+              <h3 className="mb-1.5 text-[12px] font-bold tracking-wide">
+                MANPOWER
+              </h3>
+              <ul className="space-y-0.5 text-[11px]">
+                {COUNT_ORDER.map((line) => {
+                  const row = manpower.get(line);
+                  if (!row) return null;
+                  const short = row.filled < row.posts;
+                  return (
+                    <li key={line} className="flex items-baseline gap-1.5">
+                      <span className="text-muted-foreground">
+                        {COUNT_LABELS[line]}:
+                      </span>
+                      <span className="font-semibold tabular-nums">
+                        {row.filled}
+                      </span>
+                      {short && (
+                        <span className="text-[10px] text-destructive">
+                          (of {row.posts} posts — {row.posts - row.filled} vacant)
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="mt-1.5 border-t border-border pt-1.5 text-[12px] font-bold">
+                TOTAL: {totalFilled}
+                <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">
+                  of {ALL_SLOTS.length} posts
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="mb-1.5 text-[12px] font-bold tracking-wide">
+                PRODUCTIVE CAPACITY
+              </h3>
+              <table className="text-[11px]">
+                <tbody>
+                  {CAPACITY.map((c) => (
+                    <tr key={c.label}>
+                      <td className="pr-4 text-muted-foreground">{c.label}</td>
+                      <td className="pr-3 font-bold">{c.value}</td>
+                      <td className="text-[10px] text-muted-foreground">
+                        {c.note}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <h3 className="mb-0.5 mt-3 text-[12px] font-bold tracking-wide">
+                NOTE
+              </h3>
+              {/* The sheet is sized to its content, so an unwrapped sentence
+                  here would set the width of the entire chart — and it did,
+                  pushing the drawing down to half size to make room for one
+                  paragraph. Bounded in characters rather than pixels so it
+                  keeps its shape as the chart is re-proportioned for paper. */}
+              <p className="max-w-[58ch] text-[11px] leading-snug text-muted-foreground">
+                {CAPACITY_NOTE}
+              </p>
+            </div>
+          </div>
+
+          <p className="text-right text-[10px] text-muted-foreground">
+            {CHART_FOOTER}
           </p>
         </div>
-
-        {/* Footnotes. Manpower is counted off the chart; capacity is not, and
-            is reproduced from the plant's own sheet. */}
-        <div className="chart-notes grid gap-6 border-t border-border pt-4 md:grid-cols-2">
-          <div>
-            <h3 className="mb-2 text-[13px] font-bold tracking-wide">MANPOWER</h3>
-            <ul className="space-y-1 text-[12px]">
-              {COUNT_ORDER.map((line) => {
-                const row = manpower.get(line);
-                if (!row) return null;
-                const short = row.filled < row.posts;
-                return (
-                  <li key={line} className="flex items-baseline gap-1.5">
-                    <span className="text-muted-foreground">
-                      {COUNT_LABELS[line]}:
-                    </span>
-                    <span className="font-semibold tabular-nums">{row.filled}</span>
-                    {short && (
-                      <span className="text-[11px] text-destructive">
-                        (of {row.posts} posts — {row.posts - row.filled} vacant)
-                      </span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-            <div className="mt-2 border-t border-border pt-2 text-[13px] font-bold">
-              TOTAL: {totalFilled}
-              <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">
-                of {ALL_SLOTS.length} posts
-              </span>
-            </div>
-          </div>
-
-          <div>
-            <h3 className="mb-2 text-[13px] font-bold tracking-wide">
-              PRODUCTIVE CAPACITY
-            </h3>
-            <table className="text-[12px]">
-              <tbody>
-                {CAPACITY.map((c) => (
-                  <tr key={c.label}>
-                    <td className="pr-4 text-muted-foreground">{c.label}</td>
-                    <td className="pr-3 font-bold">{c.value}</td>
-                    <td className="text-[11px] text-muted-foreground">{c.note}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <h3 className="mb-1 mt-4 text-[13px] font-bold tracking-wide">NOTE</h3>
-            <p className="max-w-prose text-[12px] leading-snug text-muted-foreground">
-              {CAPACITY_NOTE}
-            </p>
-          </div>
-        </div>
-
-        <p className="text-right text-[10px] text-muted-foreground">
-          {CHART_FOOTER}
-        </p>
       </div>
 
       <AssignDialog

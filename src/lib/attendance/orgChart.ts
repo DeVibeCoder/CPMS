@@ -28,6 +28,32 @@ export interface ChartGroup {
   id: string;
   label: string;
   slots: ChartSlot[];
+  /**
+   * Break the group into one column per designation.
+   *
+   * Only logistics wants it: seven vehicle operators in one tall column says
+   * nothing, while three heavy vehicle, three forklift and one pickup is the
+   * shape of the section. Everywhere else the group *is* the team and a single
+   * column, in order of seniority, is what the plant's own chart draws.
+   */
+  splitByTitle?: boolean;
+}
+
+/**
+ * The columns a group is drawn in.
+ *
+ * One per designation where the group asks for it, in the order the posts are
+ * declared; a single column of everybody otherwise.
+ */
+export function groupColumns(group: ChartGroup): ChartSlot[][] {
+  if (!group.splitByTitle) return [group.slots];
+  const columns: ChartSlot[][] = [];
+  for (const slot of group.slots) {
+    const last = columns[columns.length - 1];
+    if (last && last[0].title === slot.title) last.push(slot);
+    else columns.push([slot]);
+  }
+  return columns;
 }
 
 export type CountLine =
@@ -100,6 +126,7 @@ export const DISPATCH_GROUPS: ChartGroup[] = [
   {
     id: "logistics",
     label: "LOGISTICS",
+    splitByTitle: true,
     slots: [
       ...repeat("hv", 3, "Heavy Vehicle Operator", "vehicleOperator"),
       ...repeat("fl", 3, "Forklift Operator", "vehicleOperator"),

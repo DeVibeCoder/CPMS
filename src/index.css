@@ -253,16 +253,17 @@
   }
 
   .printing-chart .print-sheet {
-    /* The width comes from `.chart-page` below, not from the paper: the chart is
-       laid out at a known size and then scaled to fit, so what prints does not
-       depend on the window it was printed from. The factor is measured in JS
-       just before printing — see `OrgChartTab`'s `onPrint`. */
-    transform: scale(var(--chart-print-scale, 1));
-    transform-origin: top left;
-    /* Scaling is a paint-time transform: the box it leaves behind is still full
-       size and would run onto a second page. The height it actually occupies is
-       set from the same measurement that produced the scale. */
-    height: var(--chart-print-height, auto);
+    /* `zoom`, not `transform: scale()`. A transform is painted after layout, so
+       the box it leaves behind stays full size and drags a second, empty page
+       along behind the chart. Zoom shrinks the box as well as the drawing, so
+       the chart genuinely occupies one page.
+
+       The factor is measured just before printing — see `OrgChartTab`'s
+       `fitToPage`. What is being scaled is a layout the same code has already
+       widened to the shape of the paper, so this is the last few per cent
+       rather than the whole fit. */
+    zoom: var(--chart-print-scale, 1);
+    margin-inline: auto;
   }
 
   /* Faint status washes survive a printer only if backgrounds are kept. */
@@ -272,58 +273,227 @@
   }
 }
 
-/* -----------------------------------------------------------------------------
-   The org chart's paper layout.
+/* =============================================================================
+   The organisational chart.
 
-   Deliberately outside `@media print`, because it is used for the PNG download
-   as well — the two produce the same sheet, and only one of them involves a
-   printer. `OrgChartTab` puts `.chart-page` on the chart for as long as a print
-   or a capture takes, and takes it off again.
+   Drawn the way the plant's own chart is drawn: boxes joined by lines. The lines
+   are not decoration — a box floating in a column says who is on the team, and
+   only the line says who they answer to. They are CSS borders on pseudo-elements
+   rather than an SVG overlay, so they follow the boxes when the chart is
+   re-laid-out for paper instead of having to be re-measured.
 
-   The width is Letter landscape at 96px to the inch, less a 0.3in margin each
-   side: 11in − 0.6in = 10.4in = 998px. Everything inside then has a known width
-   to lay out against, instead of whatever the browser window happened to be.
-   -------------------------------------------------------------------------- */
-/* The sheet's own spacing lives here rather than in utilities, so the paper
-   version below can simply tighten it. A `space-y-*` utility could not be
-   overridden without out-specificity-ing Tailwind's own selector, which is a
-   worse thing to leave behind than four lines of ordinary CSS. */
+   Two joins cover the whole chart:
+
+     .org-fan    one parent, several children side by side. A stem drops from the
+                 parent onto a horizontal bus, and the bus drops into each child.
+     .org-chain  a team in one column, each box under the last.
+
+   Everything is driven off --org-col, the width of a single column of posts.
+   Changing that one value re-proportions the whole chart, which is how the print
+   is fitted to the page: see `OrgChartTab`'s `fitToPage`.
+   ========================================================================== */
+:root {
+  --org-line: 214 20% 78%;
+  /* The command boxes: manager and supervisors dark, the dispatch officer a
+     shade darker again so the two levels are told apart at a glance. */
+  --org-lead: 215 25% 33%;
+  --org-lead-deep: 216 32% 23%;
+  /* The band over each team. */
+  --org-band: 210 38% 45%;
+
+  --org-col: 176px;
+  /* One box, and the gap a connector runs through. Fixed rather than content-
+     sized so the columns of a row line up with each other. */
+  --org-box: 46px;
+  --org-drop: 16px;
+  --org-gap: 14px;
+}
+
+.dark {
+  --org-line: 215 18% 34%;
+  --org-lead: 215 22% 40%;
+  --org-lead-deep: 216 26% 30%;
+  --org-band: 210 45% 42%;
+}
+
+/* The sheet. A fixed width on screen too, inside a scroller, so what is on the
+   screen is the same drawing that comes off the printer rather than a reflowed
+   cousin of it. */
 .chart-sheet {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.25rem;
   padding: 1.25rem;
+  width: max-content;
+  min-width: 100%;
 }
 
+/* -- the joins ------------------------------------------------------------- */
+
+.org-stem {
+  width: 0;
+  height: var(--org-drop);
+  margin-inline: auto;
+  border-left: 1px solid hsl(var(--org-line));
+}
+
+/* The production side has no dispatch officer, so its stem stands in for that
+   whole row. Without it the two branches' team bands would sit at different
+   heights and the chart would read as though the plants were a level lower. */
+.org-stem--past-officer {
+  height: calc(var(--org-box) + var(--org-drop) * 2);
+}
+
+.org-fan {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--org-gap);
+}
+
+.org-fan > * {
+  position: relative;
+  padding-top: var(--org-drop);
+}
+
+/* The bus. Each child draws its own stretch of it, running out to the middle of
+   the gap on either side so the stretches meet up. */
+.org-fan > *::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: calc(var(--org-gap) / -2);
+  right: calc(var(--org-gap) / -2);
+  border-top: 1px solid hsl(var(--org-line));
+}
+.org-fan > *:first-child::before {
+  left: 50%;
+}
+.org-fan > *:last-child::before {
+  right: 50%;
+}
+.org-fan > *:only-child::before {
+  content: none;
+}
+
+/* And the drop off the bus into the child. */
+.org-fan > *::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: var(--org-drop);
+  border-left: 1px solid hsl(var(--org-line));
+}
+
+.org-chain {
+  display: flex;
+  flex-direction: column;
+  gap: var(--org-drop);
+  width: var(--org-col);
+}
+
+.org-chain > * + * {
+  position: relative;
+}
+.org-chain > * + *::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: calc(var(--org-drop) * -1);
+  height: var(--org-drop);
+  border-left: 1px solid hsl(var(--org-line));
+}
+
+/* Branches are joined at their centres, so each one has to be its own column. */
+.org-branch {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The two halves of the plant stand further apart than teams within a half, so
+   the eye reads dispatch and production as two things rather than five. */
+.org-fan--branches {
+  gap: calc(var(--org-gap) * 3);
+}
+
+/* -- boxes ----------------------------------------------------------------- */
+
+.org-box {
+  height: var(--org-box);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  padding: 0 8px;
+  text-align: center;
+  overflow: hidden;
+}
+
+/* A command post: manager, supervisors, dispatch officer. Dark, and wider than
+   a shop-floor post, so the line of command reads down the page before any name
+   does. Sized off --org-col like everything else, so one variable re-proportions
+   the whole chart when it is fitted to paper. */
+.org-lead {
+  width: calc(var(--org-col) * 1.3);
+  margin-inline: auto;
+  color: #fff;
+  background: hsl(var(--org-lead));
+}
+.org-lead--deep {
+  background: hsl(var(--org-lead-deep));
+}
+
+/* The band naming a team. It spans however many columns the team is drawn in,
+   which is what --org-span carries in from the markup. */
+.org-band {
+  height: 26px;
+  color: #fff;
+  background: hsl(var(--org-band));
+  width: calc(
+    var(--org-col) * var(--org-span, 1) + var(--org-gap) * (var(--org-span, 1) - 1)
+  );
+}
+
+/* The jumbo points are a crew count rather than named posts, so their boxes are
+   shorter than a post's — they are not people, and should not read as people. */
+.org-crew {
+  height: 28px;
+}
+
+/* -- paper ------------------------------------------------------------------
+   Applied by `OrgChartTab` for as long as a print or a download takes.
+
+   Paper is white and is read at arm's length, so the chart drops the app's
+   theme and takes the light palette whichever theme the screen is in — a chart
+   printed in dark mode is a page of toner and an unreadable one at that. The
+   colours are restated rather than inherited because the dark class sits on an
+   ancestor and would otherwise still be in force.
+   -------------------------------------------------------------------------- */
 .chart-page {
-  width: 998px;
-  max-width: none;
-  /* Every pixel of white space costs the whole chart its scale, since the sheet
-     is shrunk to whatever fits the page. Room to breathe on a screen is room
-     wasted on paper. */
-  gap: 1rem;
-  padding: 0.875rem;
-}
-
-/* The responsive breakpoints inside the chart are about the *window*, which is
-   not what is being laid out here. On paper the branches are always side by
-   side and the footnotes are always two columns — that is the shape of the
-   plant's own chart, and a one-column reflow would run off the bottom. */
-.chart-page .chart-branches,
-.chart-page .chart-notes {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-/* Three packing plants share half a landscape page, so the groups give up their
-   on-screen minimum and divide it evenly. Left at 210px they wrapped onto a
-   second row, which cost far more height than the narrower boxes cost width. */
-.chart-page .chart-group {
   min-width: 0;
-}
+  gap: 0.75rem;
+  padding: 0.5rem;
 
-/* Anything that is a control rather than part of the chart. Hidden here rather
-   than with `print:hidden` so it is out of the PNG too — and so the height
-   measured before printing is the height that prints. */
-.chart-page .chart-screen-only {
-  display: none;
+  --background: 0 0% 100%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --foreground: 222 47% 11%;
+  --muted: 214 32% 95%;
+  --muted-foreground: 215 16% 42%;
+  --border: 214 25% 85%;
+  --primary: 217 91% 33%;
+  --primary-foreground: 0 0% 100%;
+  --destructive: 0 72% 45%;
+  --info: 205 88% 42%;
+  --warning: 35 92% 42%;
+
+  --org-line: 214 20% 72%;
+  --org-lead: 215 25% 33%;
+  --org-lead-deep: 216 32% 23%;
+  --org-band: 210 38% 45%;
+
+  color: hsl(var(--foreground));
+  background: #fff;
 }
