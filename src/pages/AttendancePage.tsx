@@ -1,5 +1,4 @@
 import { useCallback, useState } from "react";
-import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -117,33 +116,18 @@ export default function AttendancePage() {
             default plain white card. Both are theme tokens, so the light and
             dark palettes each supply their own pair and the contrast between
             them holds without a second rule here. */}
-        <div className="flex items-center gap-2">
-          <div className="overflow-x-auto scrollbar-none">
-            <TabsList className="bg-primary/10 dark:bg-primary/[0.14]">
-              {TABS.map((t) => (
-                <TabsTrigger
-                  key={t.value}
-                  value={t.value}
-                  className="text-primary/70 hover:text-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow"
-                >
-                  {t.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </div>
-
-          {/* Somebody else may be entering into the same sheets from the
-              office. Nothing here polls, so this is how you find out. */}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto text-muted-foreground"
-            disabled={sheets.saving}
-            onClick={sheets.reload}
-          >
-            <RefreshCw className={cn("h-4 w-4", sheets.saving && "animate-spin")} />
-            {sheets.saving ? "Saving" : "Refresh"}
-          </Button>
+        <div className="overflow-x-auto scrollbar-none">
+          <TabsList className="bg-primary/10 dark:bg-primary/[0.14]">
+            {TABS.map((t) => (
+              <TabsTrigger
+                key={t.value}
+                value={t.value}
+                className="text-primary/70 hover:text-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow"
+              >
+                {t.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
         </div>
 
         <TabsContent value="employees">

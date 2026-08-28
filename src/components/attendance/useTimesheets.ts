@@ -50,9 +50,14 @@ const FLUSH_DELAY = 700;
 export interface Timesheets {
   loading: boolean;
   error: string | null;
-  /** A change is on its way to the backend. */
-  saving: boolean;
-  /** Re-read everything from the backend. */
+  /**
+   * Re-read everything from the backend.
+   *
+   * Not offered as a control on the page: this is what the module does when it
+   * mounts, and what it does again to put the screen right after a write fails.
+   * Somebody else's changes arrive the next time Attendance is opened, which is
+   * how every other screen in the app behaves.
+   */
   reload: () => void;
   /**
    * Everyone the sheets know about — people who have left included. The
@@ -142,7 +147,6 @@ const message = (e: unknown) =>
 export function useTimesheets(): Timesheets {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
   const [roster, setRoster] = useState<Employee[]>([]);
   const [departures, setDepartures] = useState<Departure[]>([]);
   const [entries, setEntries] = useState<Map<string, TimesheetEntry>>(new Map());
@@ -211,7 +215,6 @@ export function useTimesheets(): Timesheets {
    */
   const run = useCallback(
     async (what: () => Promise<void>, failed: string) => {
-      setSaving(true);
       try {
         await what();
       } catch (e) {
@@ -221,8 +224,6 @@ export function useTimesheets(): Timesheets {
           description: `${message(e)} The screen has been reloaded.`,
         });
         await load().catch(() => setError("Attendance could not be reloaded."));
-      } finally {
-        setSaving(false);
       }
     },
     [load],
@@ -689,7 +690,6 @@ export function useTimesheets(): Timesheets {
   return {
     loading,
     error,
-    saving,
     reload,
     roster,
     employees,
