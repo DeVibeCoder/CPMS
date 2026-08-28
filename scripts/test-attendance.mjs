@@ -15,6 +15,7 @@ import {
   formatDuration,
   formatShort,
   monthDates,
+  digitRunAt,
   formatDayMonthYear,
   parseDayMonthYear,
   parseTime,
@@ -902,6 +903,36 @@ test("a date is read and shown the way the plant writes it", () => {
   assert.equal(parseDayMonthYear(" 5/1/2026 "), "2026-01-05");
   assert.equal(formatDayMonthYear("2026-12-25"), "25/12/2026");
   assert.equal(formatDayMonthYear("2026-01-05"), "05/01/2026");
+});
+
+test("clicking a date segment selects the whole of it", () => {
+  const date = "25/12/2026";
+  const run = (caret) => digitRunAt(date, caret);
+
+  // Anywhere in the day, including either edge of it.
+  assert.deepEqual(run(0), [0, 2]);
+  assert.deepEqual(run(1), [0, 2]);
+  assert.deepEqual(run(2), [0, 2]);
+  // The month.
+  assert.deepEqual(run(3), [3, 5]);
+  assert.deepEqual(run(4), [3, 5]);
+  assert.deepEqual(run(5), [3, 5]);
+  // The year, all four digits of it, from anywhere inside.
+  assert.deepEqual(run(6), [6, 10]);
+  assert.deepEqual(run(8), [6, 10]);
+  assert.deepEqual(run(10), [6, 10]);
+});
+
+test("a half-typed date still selects by segment", () => {
+  assert.deepEqual(digitRunAt("25/1", 4), [3, 4], "one digit is still the month");
+  assert.deepEqual(digitRunAt("5", 0), [0, 1]);
+  assert.deepEqual(digitRunAt("25/12/20", 7), [6, 8], "two digits of a year");
+});
+
+test("with nothing to select the caret is left where it is", () => {
+  assert.equal(digitRunAt("", 0), null);
+  assert.equal(digitRunAt("25/12/", 6), null, "past the last digit typed");
+  assert.equal(digitRunAt("//", 1), null);
 });
 
 test("a date round-trips through both directions unchanged", () => {

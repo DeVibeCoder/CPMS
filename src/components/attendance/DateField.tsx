@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
+  digitRunAt,
   formatDayMonthYear,
   parseDayMonthYear,
 } from "@/lib/attendance/calculations";
@@ -13,8 +14,13 @@ import {
  * `<input type="time">`. That control renders in the machine's locale, so the
  * same field shows 03/12 to one clerk and 12/03 to the next with nothing on
  * screen to say which — and between a day in March and a day in December that is
- * not a cosmetic difference. It is worse here than for times, because a
- * misread time looks wrong and a misread date does not.
+ * not a cosmetic difference. It is worse here than for times, because a misread
+ * time looks wrong and a misread date does not.
+ *
+ * What the native control does get right is that it is *segmented*: clicking the
+ * month selects the month, so the next keystroke replaces it. That is worth
+ * keeping, and this keeps it — see `onSelectSegment`. Giving up the locale
+ * problem was the point; giving up the editing behaviour with it was not.
  *
  * An unreadable date is left on screen to be corrected rather than being
  * discarded or rounded to something real, and the field says so in red. What
@@ -37,6 +43,7 @@ export function DateField({
   className?: string;
   "aria-label"?: string;
 }) {
+  const ref = useRef<HTMLInputElement>(null);
   const [text, setText] = useState(() => (value ? formatDayMonthYear(value) : ""));
 
   // Follow the stored value when it changes underneath — the form was reset, or
@@ -59,10 +66,28 @@ export function DateField({
     // Unreadable: leave it on screen so it can be corrected.
   };
 
+  /**
+   * Select the whole day, month or year the caret landed in.
+   *
+   * Skipped when the selection is not collapsed, because that is somebody
+   * dragging out a selection of their own and taking it off them would be
+   * worse than not helping at all.
+   */
+  const onSelectSegment = () => {
+    const field = ref.current;
+    if (!field || field.disabled) return;
+    const { selectionStart, selectionEnd } = field;
+    if (selectionStart === null || selectionStart !== selectionEnd) return;
+
+    const run = digitRunAt(field.value, selectionStart);
+    if (run) field.setSelectionRange(run[0], run[1]);
+  };
+
   const unreadable = Boolean(text.trim()) && parseDayMonthYear(text) === null;
 
   return (
     <Input
+      ref={ref}
       id={id}
       type="text"
       inputMode="numeric"
@@ -72,9 +97,17 @@ export function DateField({
       disabled={disabled}
       value={text}
       onChange={(e) => setText(e.target.value)}
+      // `mouseUp`, not `click`: the browser places the caret between the two, so
+      // this is the first moment there is a caret position worth reading.
+      onMouseUp={onSelectSegment}
+      onFocus={onSelectSegment}
       onBlur={commit}
       onKeyDown={(e) => e.key === "Enter" && commit()}
-      className={cn("tabular-nums", unreadable && "border-destructive text-destructive", className)}
+      className={cn(
+        "tabular-nums",
+        unreadable && "border-destructive text-destructive",
+        className,
+      )}
     />
   );
 }

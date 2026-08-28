@@ -112,6 +112,35 @@ export function parseDayMonthYear(raw: string): string | null {
   return Number.isNaN(date.getTime()) || toISODate(date) !== iso ? null : iso;
 }
 
+/**
+ * The run of digits the caret is sitting in, as [start, end).
+ *
+ * What makes a typed date field behave like the native one: click anywhere in
+ * the day and the whole day is selected, so the next keystroke replaces it
+ * rather than being inserted into the middle of it. Without this, correcting
+ * the month in 25/12/2026 means selecting two characters by hand, and getting
+ * it slightly wrong leaves 25/112/2026 — which the parser then refuses, so the
+ * clerk is told off for the field's own behaviour.
+ *
+ * Works on however much has been typed rather than on a fixed mask, so it holds
+ * up for a half-finished 25/1 as well as a complete date. Returns null when the
+ * caret is not in or beside a run of digits — there being nothing to select is a
+ * good enough reason to leave the caret alone.
+ */
+export function digitRunAt(
+  text: string,
+  caret: number,
+): [number, number] | null {
+  for (const match of text.matchAll(/\d+/g)) {
+    const start = match.index;
+    const end = start + match[0].length;
+    // Inclusive of both ends, so the boundary between a segment and the
+    // separator after it belongs to the segment rather than to nothing.
+    if (caret >= start && caret <= end) return [start, end];
+  }
+  return null;
+}
+
 /** 0 = Sunday … 6 = Saturday. */
 export function weekdayOf(iso: string): number {
   return parseISODate(iso).getUTCDay();
