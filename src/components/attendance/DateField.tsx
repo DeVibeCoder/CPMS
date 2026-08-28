@@ -1,5 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ClipboardEvent, KeyboardEvent, MouseEvent } from "react";
+import type {
+  ClipboardEvent,
+  FormEvent,
+  KeyboardEvent,
+  MouseEvent,
+} from "react";
 
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -152,6 +157,40 @@ export function DateField({
     publish(pasted);
   };
 
+  /**
+   * The same edits, from a soft keyboard.
+   *
+   * `keydown` is a physical-keyboard event. Android keyboards compose their
+   * input, so a digit arrives as `Unidentified` with keyCode 229 and the handler
+   * above never sees it — which made this field accept nothing at all on most
+   * phones. `beforeinput` carries the text itself and the intent behind a
+   * delete, on every platform, so that is where a tapped key is caught.
+   *
+   * The two do not collide: `keydown` runs first, and where it acts it prevents
+   * the default, so no input event follows. This only ever runs for keys the
+   * other one could not read.
+   */
+  const onBeforeInput = (event: FormEvent<HTMLInputElement>) => {
+    const native = event.nativeEvent as InputEvent;
+    event.preventDefault();
+
+    if (native.inputType?.startsWith("delete")) {
+      apply(deleteBack(slots, segment, cursor));
+      return;
+    }
+
+    let state = { slots, segment, cursor };
+    let took = false;
+    for (const character of native.data ?? "") {
+      if (!/\d/.test(character)) continue;
+      state = typeDigit(state.slots, state.segment, state.cursor, character);
+      took = true;
+    }
+    // Autocorrect and emoji reach here too. Refusing them silently is right; a
+    // needless re-render on every one of them is not.
+    if (took) apply(state);
+  };
+
   /** Clicking anywhere in a segment takes the whole segment. */
   const onPick = (event: MouseEvent<HTMLInputElement>) => {
     const caret = event.currentTarget.selectionStart ?? 0;
@@ -183,6 +222,7 @@ export function DateField({
       }}
       onPaste={onPaste}
       onKeyDown={onKeyDown}
+      onBeforeInput={onBeforeInput}
       onMouseUp={onPick}
       onFocus={(e) => {
         setFocused(true);

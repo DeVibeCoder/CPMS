@@ -13,6 +13,7 @@
     "db:migrate": "node supabase/apply-migrations.mjs",
     "test:admin": "node supabase/test-admin-users.mjs",
     "test:attendance": "node scripts/test-attendance.mjs",
+    "check:classes": "node scripts/check-classes.mjs",
     "test:attendance-db": "node supabase/test-attendance-db.mjs"
   },
   "dependencies": {
