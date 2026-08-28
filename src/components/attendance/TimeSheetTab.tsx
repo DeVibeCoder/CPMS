@@ -219,10 +219,15 @@ export function TimeSheetTab({
                       {employee.id}
                     </TableCell>
                     <TableCell>
+                      {/* Both sized explicitly. The department was on a fixed
+                          11px while the row around it dropped to 10 on a phone,
+                          so the section ended up larger than the person — which
+                          is backwards, and the reason this column reads oddly on
+                          a small screen. */}
                       <div className="font-medium leading-tight">
                         {employee.name}
                       </div>
-                      <div className="text-[11px] text-muted-foreground">
+                      <div className="text-[8px] leading-tight text-muted-foreground sm:text-[11px]">
                         {employee.department}
                       </div>
                     </TableCell>
