@@ -124,22 +124,45 @@ const SCREEN_COLUMN = { min: 132, max: 200 };
  * and a hand-picked subset would go stale the first time one of them changed.
  */
 function printablePage(body: string): string {
-  const styles = [
-    ...document.querySelectorAll('style, link[rel="stylesheet"]'),
-  ]
-    .map((node) => node.outerHTML)
-    .join("");
+  // The rules themselves, not links to them.
+  //
+  // Copying the app's <link> tags across looked equivalent and was not: each one
+  // is a fetch, and the copy went to the printer before they landed. What came
+  // out was the chart with no stylesheet at all — no boxes, no lines, no
+  // landscape, two pages of bare HTML with bullet points on the manpower list.
+  // Reading the rules out of the loaded sheets and inlining them means there is
+  // nothing left to wait for and nothing left to lose a race with.
+  let rules = "";
+  const links: string[] = [];
+  for (const sheet of Array.from(document.styleSheets)) {
+    try {
+      for (const rule of Array.from(sheet.cssRules)) rules += `${rule.cssText}\n`;
+    } catch {
+      // Cross-origin — in practice the web font, which cannot be read and does
+      // not need to be. It is carried as a link and may arrive or not; the
+      // chart is laid out in fixed pixels either way.
+      if (sheet.href) links.push(`<link rel="stylesheet" href="${sheet.href}">`);
+    }
+  }
 
   // The copy is an `about:blank` document, so it is told where the app lives —
-  // otherwise a stylesheet or a font referred to by a relative path resolves
-  // against nothing and the chart prints unstyled.
+  // otherwise the font above resolves against nothing.
+  //
+  // The page setup comes first, ahead of the app's own rules. It is three lines
+  // and it decides the paper; putting it after several thousand lines of
+  // stylesheet only creates a place for it to be lost, which is exactly what
+  // happened when this copied <style> tags across and one of them ended the
+  // block early. Nothing after it can prevent the sheet being landscape.
   return `<!doctype html><html><head><meta charset="utf-8">
-  <base href="${document.baseURI}">${styles}<style>
+  <base href="${document.baseURI}">
+  <style>
     @page { size: ${PAGE.name}; margin: ${PAGE.margin}in; }
     html, body { margin: 0; padding: 0; background: #fff; }
     /* Faint status washes survive a printer only if backgrounds are kept. */
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  </style></head><body>${body}</body></html>`;
+  </style>
+  ${links.join("")}<style>${rules}</style>
+  </head><body>${body}</body></html>`;
 }
 
 /**

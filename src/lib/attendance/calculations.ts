@@ -66,6 +66,47 @@ export function addDays(iso: string, days: number): string {
   return toISODate(d);
 }
 
+/**
+ * A date the way the plant writes it: 25-12-2026.
+ *
+ * ISO is what gets stored, sorted and compared — it is the only form that does
+ * all three correctly — but it is not the form anybody here reads a date in, and
+ * a sheet that shows one thing and is typed in another is a sheet people make
+ * mistakes on.
+ */
+export function formatDayMonthYear(iso: string): string {
+  const [year, month, day] = iso.split("-");
+  return day && month && year ? `${day}-${month}-${year}` : iso;
+}
+
+/**
+ * Read a date somebody typed, in the order they think in.
+ *
+ * Deliberately not `<input type="date">`, for the reason `TimeField` is not
+ * `<input type="time">`: that control renders in the machine's locale, so the
+ * same field reads 03-12 to one clerk and 12-03 to the next, and neither is
+ * warned which they are looking at. Between a day in March and a day in December
+ * that is not a cosmetic difference.
+ *
+ * So 25-12-2026, 25/12/2026 and 25.12.2026 are all read, and 2512026 is not —
+ * a date that cannot be read comes back null rather than being rounded into a
+ * real one, because a typo has to stay visible instead of quietly becoming a
+ * different day.
+ */
+export function parseDayMonthYear(raw: string): string | null {
+  const parts = raw.trim().split(/[^\d]+/).filter(Boolean);
+  if (parts.length !== 3) return null;
+
+  const [day, month, year] = parts;
+  if (day.length > 2 || month.length > 2 || year.length !== 4) return null;
+
+  const iso = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  // Round-tripping catches the days that do not exist: 31-02 parses as a date
+  // and comes back as 03-03, which is not the day anybody meant.
+  const date = parseISODate(iso);
+  return Number.isNaN(date.getTime()) || toISODate(date) !== iso ? null : iso;
+}
+
 /** 0 = Sunday … 6 = Saturday. */
 export function weekdayOf(iso: string): number {
   return parseISODate(iso).getUTCDay();

@@ -45,6 +45,7 @@ import {
   employeesToCsv,
   parseEmployeesCsv,
 } from "@/lib/attendance/employeeCsv";
+import { formatDayMonthYear } from "@/lib/attendance/calculations";
 import { DEFAULT_SECTION } from "@/lib/attendance/sections";
 import { awayOn, exitOf, isBooked, isLeaving, upper } from "@/lib/attendance/staff";
 import { toast } from "@/hooks/use-toast";
@@ -518,13 +519,15 @@ function RowNote({
 
   if (exit && today >= exit.from) {
     return (
-      <div className="text-[11px] text-muted-foreground">Left {exit.from}</div>
+      <div className="text-[11px] text-muted-foreground">
+        Left {formatDayMonthYear(exit.from)}
+      </div>
     );
   }
   if (exit) {
     return (
       <div className="text-[11px] font-medium text-destructive">
-        Leaving {exit.from}
+        Leaving {formatDayMonthYear(exit.from)}
       </div>
     );
   }
@@ -534,7 +537,7 @@ function RowNote({
     return (
       <div className="text-[11px] font-medium text-warning">
         {DEPARTURE_LABELS[away.type]}
-        {away.to ? ` until ${away.to}` : ""}
+        {away.to ? ` until ${formatDayMonthYear(away.to)}` : ""}
       </div>
     );
   }
@@ -546,7 +549,7 @@ function RowNote({
       .sort((a, b) => a.from.localeCompare(b.from))[0];
     return (
       <div className="text-[11px] text-muted-foreground">
-        {DEPARTURE_LABELS[next.type]} booked from {next.from}
+        {DEPARTURE_LABELS[next.type]} booked from {formatDayMonthYear(next.from)}
       </div>
     );
   }

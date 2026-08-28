@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
+import { formatDayMonthYear } from "@/lib/attendance/calculations";
 import { hasExited } from "@/lib/attendance/staff";
 import {
   DEPARTURE_LABELS,
@@ -39,6 +40,7 @@ import {
   type Employee,
 } from "@/types/attendance";
 import type { Timesheets } from "./useTimesheets";
+import { DateField } from "./DateField";
 import { DepartureBadge } from "./shared";
 
 const MONTH_NAMES = [
@@ -272,12 +274,17 @@ function DepartureList({
                     <TableCell>
                       <DepartureBadge type={d.type} />
                     </TableCell>
-                    <TableCell className="tabular-nums">{d.from}</TableCell>
+                    {/* Shown the way the form is typed. A list in one format
+                        and a field in another is how a March date gets entered
+                        as a December one. */}
+                    <TableCell className="tabular-nums">
+                      {formatDayMonthYear(d.from)}
+                    </TableCell>
                     <TableCell className="tabular-nums text-muted-foreground">
                       {/* An exit has no return date, so the cell is simply a
                           dash — the same as any other column with nothing in
                           it, rather than a sentence explaining itself. */}
-                      {d.type === "exit" ? "—" : (d.to ?? "—")}
+                      {d.type === "exit" || !d.to ? "—" : formatDayMonthYear(d.to)}
                     </TableCell>
                     {!readOnly && (
                       <TableCell>
@@ -356,10 +363,10 @@ function AddDepartureDialog({
       title: `${DEPARTURE_LABELS[type]} recorded`,
       description:
         type === "exit"
-          ? `${who?.name} moves off the staff list on ${from}.`
+          ? `${who?.name} moves off the staff list on ${formatDayMonthYear(from)}.`
           : from <= sheets.today
             ? `${who?.name} shows as ${DEPARTURE_LABELS[type]} now.`
-            : `${who?.name} shows as ${DEPARTURE_LABELS[type]} from ${from}.`,
+            : `${who?.name} shows as ${DEPARTURE_LABELS[type]} from ${formatDayMonthYear(from)}.`,
     });
     close();
   };
@@ -370,7 +377,8 @@ function AddDepartureDialog({
         <DialogHeader>
           <DialogTitle>Add departure</DialogTitle>
           <DialogDescription>
-            Enter it when you are told. It takes effect on its own date.
+            Enter it when you are told. It takes effect on its own date. Dates
+            are day-month-year — 25-12-2026.
           </DialogDescription>
         </DialogHeader>
 
@@ -406,25 +414,14 @@ function AddDepartureDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="dep-from">From</Label>
-              <Input
-                id="dep-from"
-                type="date"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-              />
+              <DateField id="dep-from" value={from} onChange={setFrom} />
             </div>
             {/* An exit has one date. The To field is dropped rather than shown
                 disabled, so nothing invites a value that has no meaning. */}
             {ranged && (
               <div className="space-y-1.5">
                 <Label htmlFor="dep-to">To</Label>
-                <Input
-                  id="dep-to"
-                  type="date"
-                  min={from}
-                  value={to}
-                  onChange={(e) => setTo(e.target.value)}
-                />
+                <DateField id="dep-to" value={to} onChange={setTo} />
               </div>
             )}
           </div>

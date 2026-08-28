@@ -15,6 +15,8 @@ import {
   formatDuration,
   formatShort,
   monthDates,
+  formatDayMonthYear,
+  parseDayMonthYear,
   parseTime,
   parseTyped,
   startOfWeek,
@@ -890,6 +892,39 @@ test("the shorthand a clerk actually types is understood", () => {
   assert.equal(parseTyped(" 1930 "), "19:30");
   assert.equal(parseTyped("2359"), "23:59");
   assert.equal(parseTyped("0"), "00:00");
+});
+
+test("a date is read and shown the way the plant writes it", () => {
+  assert.equal(parseDayMonthYear("25-12-2026"), "2026-12-25");
+  assert.equal(parseDayMonthYear("25/12/2026"), "2026-12-25");
+  assert.equal(parseDayMonthYear("25.12.2026"), "2026-12-25");
+  assert.equal(parseDayMonthYear(" 5-1-2026 "), "2026-01-05");
+  assert.equal(formatDayMonthYear("2026-12-25"), "25-12-2026");
+  assert.equal(formatDayMonthYear("2026-01-05"), "05-01-2026");
+});
+
+test("a date round-trips through both directions unchanged", () => {
+  for (const iso of ["2026-01-01", "2026-02-28", "2026-12-31", "2024-02-29"]) {
+    assert.equal(parseDayMonthYear(formatDayMonthYear(iso)), iso, iso);
+  }
+});
+
+test("a day that does not exist is refused, not rolled into the next month", () => {
+  // The failure this exists for: Date happily turns 31 February into 3 March,
+  // and a booking silently a week out is worse than one that would not save.
+  assert.equal(parseDayMonthYear("31-02-2026"), null);
+  assert.equal(parseDayMonthYear("29-02-2026"), null);
+  assert.equal(parseDayMonthYear("29-02-2024"), "2024-02-29", "2024 is a leap year");
+  assert.equal(parseDayMonthYear("32-01-2026"), null);
+  assert.equal(parseDayMonthYear("01-13-2026"), null);
+});
+
+test("something that is not a date is refused rather than guessed at", () => {
+  assert.equal(parseDayMonthYear(""), null);
+  assert.equal(parseDayMonthYear("25-12"), null);
+  assert.equal(parseDayMonthYear("25-12-26"), null, "a two-digit year is ambiguous");
+  assert.equal(parseDayMonthYear("2026-12-25"), null, "that is the stored form, not the typed one");
+  assert.equal(parseDayMonthYear("tomorrow"), null);
 });
 
 test("a time that is not a time is refused, not rounded into one", () => {
