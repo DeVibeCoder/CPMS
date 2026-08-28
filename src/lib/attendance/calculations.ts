@@ -67,7 +67,7 @@ export function addDays(iso: string, days: number): string {
 }
 
 /**
- * A date the way the plant writes it: 25-12-2026.
+ * A date the way the plant writes it: 25/12/2026.
  *
  * ISO is what gets stored, sorted and compared — it is the only form that does
  * all three correctly — but it is not the form anybody here reads a date in, and
@@ -76,11 +76,16 @@ export function addDays(iso: string, days: number): string {
  */
 export function formatDayMonthYear(iso: string): string {
   const [year, month, day] = iso.split("-");
-  return day && month && year ? `${day}-${month}-${year}` : iso;
+  return day && month && year ? `${day}/${month}/${year}` : iso;
 }
 
 /**
  * Read a date somebody typed, in the order they think in.
+ *
+ * The separator is not fussed over — any run of non-digits divides the three
+ * parts — because a keypad has a full stop on it and a keyboard has a slash, and
+ * insisting on one of them only creates a field that rejects a date it plainly
+ * understood.
  *
  * Deliberately not `<input type="date">`, for the reason `TimeField` is not
  * `<input type="time">`: that control renders in the machine's locale, so the
@@ -88,7 +93,7 @@ export function formatDayMonthYear(iso: string): string {
  * warned which they are looking at. Between a day in March and a day in December
  * that is not a cosmetic difference.
  *
- * So 25-12-2026, 25/12/2026 and 25.12.2026 are all read, and 2512026 is not —
+ * So 25/12/2026, 25-12-2026 and 25.12.2026 are all read, and 2512026 is not —
  * a date that cannot be read comes back null rather than being rounded into a
  * real one, because a typo has to stay visible instead of quietly becoming a
  * different day.

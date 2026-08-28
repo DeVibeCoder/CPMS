@@ -378,7 +378,7 @@ function AddDepartureDialog({
           <DialogTitle>Add departure</DialogTitle>
           <DialogDescription>
             Enter it when you are told. It takes effect on its own date. Dates
-            are day-month-year — 25-12-2026.
+            are day-month-year — 25/12/2026.
           </DialogDescription>
         </DialogHeader>
 

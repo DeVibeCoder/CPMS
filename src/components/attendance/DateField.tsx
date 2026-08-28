@@ -7,7 +7,7 @@ import {
 } from "@/lib/attendance/calculations";
 
 /**
- * A date, typed, in the order the plant writes it: 25-12-2026.
+ * A date, typed, in the order the plant writes it: 25/12/2026.
  *
  * Deliberately not `<input type="date">`, for the same reason `TimeField` is not
  * `<input type="time">`. That control renders in the machine's locale, so the
@@ -67,7 +67,7 @@ export function DateField({
       type="text"
       inputMode="numeric"
       maxLength={10}
-      placeholder="dd-mm-yyyy"
+      placeholder="dd/mm/yyyy"
       aria-label={ariaLabel}
       disabled={disabled}
       value={text}
