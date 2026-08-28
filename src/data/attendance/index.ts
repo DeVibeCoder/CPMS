@@ -95,13 +95,29 @@ export const TABLE_CHART = "attendance_chart";
 export const HISTORY_DAYS = 183;
 
 /**
- * Say what actually went wrong, with the table it went wrong on.
+ * The tables are not there. PostgREST cannot find them in its schema cache
+ * (PGRST205); Postgres itself would say the relation does not exist (42P01).
+ */
+const NOT_SET_UP = new Set(["PGRST205", "42P01"]);
+
+export const NOT_SET_UP_MESSAGE =
+  "Attendance is not set up on this database yet. Apply the attendance " +
+  "migration — npm run db:migrate — and reload.";
+
+/**
+ * Say what actually went wrong, with the operation it went wrong on.
  *
  * A bare PostgREST message is often "new row violates row-level security
  * policy", which tells a supervisor nothing. Naming the operation at least
  * points whoever reads the toast at the right screen.
+ *
+ * A missing table is called out separately because it is not a fault in the
+ * plant's data or anybody's permissions — it is a deploy that has arrived ahead
+ * of its migration, and the person reading it needs a different instruction
+ * from everyone else.
  */
 function fail(what: string, error: PostgrestError): never {
+  if (NOT_SET_UP.has(error.code)) throw new Error(NOT_SET_UP_MESSAGE);
   throw new Error(`${what}: ${error.message}`);
 }
 
