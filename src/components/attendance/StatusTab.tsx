@@ -254,21 +254,18 @@ function DepartureList({
         <div className="space-y-2">
           {rows.map((d) => (
             <Card key={d.id}>
-              <CardContent className="space-y-1.5 p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="truncate font-medium leading-tight">
-                      {people.get(d.employeeId)?.name ?? "—"}
-                    </div>
-                    <div className="font-mono text-[11px] text-muted-foreground">
-                      {d.employeeId}
-                    </div>
+              {/* The same shape as a staff row: who it is on the left, what it
+                  is and what you can do about it on the right. Two lists a
+                  supervisor moves between should not need reading twice. */}
+              <CardContent className="flex items-start gap-2 p-2.5">
+                <div className="min-w-0 flex-1">
+                  <div className="line-clamp-2 break-words text-[13px] font-medium leading-snug">
+                    {people.get(d.employeeId)?.name ?? "—"}
                   </div>
-                  <DepartureBadge type={d.type} />
-                </div>
-
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-xs tabular-nums text-muted-foreground">
+                  <div className="truncate text-[11px] leading-tight text-muted-foreground">
+                    <span className="font-mono">{d.employeeId}</span>
+                  </div>
+                  <div className="truncate text-[11px] leading-tight tabular-nums text-muted-foreground">
                     {formatDayMonthYear(d.from)}
                     {/* An exit has no return date, and neither has an
                         open-ended spell. Both read as a start and nothing
@@ -277,15 +274,19 @@ function DepartureList({
                       ? ` – ${formatDayMonthYear(d.to)}`
                       : ""}
                   </div>
+                </div>
+
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <DepartureBadge type={d.type} />
                   {!readOnly && (
                     <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-muted-foreground hover:text-destructive"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      aria-label="Remove"
                       onClick={() => onRemove?.(d)}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
-                      Remove
                     </Button>
                   )}
                 </div>

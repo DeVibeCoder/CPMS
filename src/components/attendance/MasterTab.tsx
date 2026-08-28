@@ -181,19 +181,22 @@ export function MasterTab({ sheets }: { sheets: Timesheets }) {
         <Card>
           <CardContent className="p-0">
             <div className="overflow-x-auto scrollbar-thin">
-              <table className="w-full border-collapse text-sm">
+              {/* A step smaller on a phone, the same way the timesheet is: the
+                  point of this sheet is reading several days at once, and every
+                  pixel of padding is a day further off the edge. */}
+              <table className="w-full border-collapse text-[10px] sm:text-sm">
                 <thead>
                   <tr className="border-b border-border">
-                    <th className="sticky left-0 z-10 min-w-[130px] bg-card px-2 py-2 text-left text-xs font-medium text-muted-foreground sm:min-w-[190px] sm:px-3">
+                    <th className="sticky left-0 z-10 min-w-[104px] bg-card px-1.5 py-1.5 text-left text-[10px] font-medium text-muted-foreground sm:min-w-[190px] sm:px-3 sm:py-2 sm:text-xs">
                       Employee
                     </th>
                     {dates.map((date) => (
                       <th
                         key={date}
                         colSpan={2}
-                        className="border-l border-border px-2 py-1 text-center"
+                        className="border-l border-border px-1 py-1 text-center sm:px-2"
                       >
-                        <div className="text-xs font-semibold">
+                        <div className="text-[10px] font-semibold sm:text-xs">
                           {format(parseISO(date), "dd MMM")}
                         </div>
                         <div className="text-[10px] font-normal text-muted-foreground">
@@ -203,13 +206,13 @@ export function MasterTab({ sheets }: { sheets: Timesheets }) {
                     ))}
                     <th
                       colSpan={2}
-                      className="border-l-2 border-border px-2 py-1 text-center text-xs font-semibold"
+                      className="border-l-2 border-border px-1 py-1 text-center text-[10px] font-semibold sm:px-2 sm:text-xs"
                     >
                       Total
                     </th>
                   </tr>
                   <tr className="border-b border-border text-[10px] uppercase text-muted-foreground">
-                    <th className="sticky left-0 z-10 bg-card px-2 pb-1.5 text-left font-normal sm:px-3">
+                    <th className="sticky left-0 z-10 bg-card px-1.5 pb-1 text-left font-normal sm:px-3 sm:pb-1.5">
                       {dates.length} day{dates.length === 1 ? "" : "s"}
                     </th>
                     {dates.map((date) => (
@@ -221,9 +224,11 @@ export function MasterTab({ sheets }: { sheets: Timesheets }) {
                 <tbody>
                   {rows.map(({ employee, cells, totals }) => (
                     <tr key={employee.id} className="border-b border-border">
-                      <td className="sticky left-0 z-10 bg-card px-3 py-1.5">
-                        <div className="font-medium leading-tight">{employee.name}</div>
-                        <div className="font-mono text-[11px] text-muted-foreground">
+                      <td className="sticky left-0 z-10 bg-card px-1.5 py-1 sm:px-3 sm:py-1.5">
+                        <div className="line-clamp-2 break-words font-medium leading-tight">
+                          {employee.name}
+                        </div>
+                        <div className="font-mono text-[9px] text-muted-foreground sm:text-[11px]">
                           {employee.id}
                         </div>
                       </td>
@@ -233,7 +238,7 @@ export function MasterTab({ sheets }: { sheets: Timesheets }) {
                           <Fragment key={date}>
                             <td
                               className={cn(
-                                "border-l border-border px-2 py-1.5 text-center tabular-nums",
+                                "border-l border-border px-1 py-1 text-center tabular-nums sm:px-2 sm:py-1.5",
                                 away && "text-muted-foreground",
                               )}
                               title={entry?.remarks}
@@ -244,7 +249,7 @@ export function MasterTab({ sheets }: { sheets: Timesheets }) {
                                   : "Leave"
                                 : formatShort(cell.workedMinutes)}
                             </td>
-                            <td className="px-2 py-1.5 text-center tabular-nums text-primary">
+                            <td className="px-1 py-1 text-center tabular-nums text-primary sm:px-2 sm:py-1.5">
                               {cell.overtimeMinutes > 0
                                 ? formatShort(cell.overtimeMinutes)
                                 : "—"}
@@ -252,10 +257,10 @@ export function MasterTab({ sheets }: { sheets: Timesheets }) {
                           </Fragment>
                         );
                       })}
-                      <td className="border-l-2 border-border px-2 py-1.5 text-center font-semibold tabular-nums">
+                      <td className="border-l-2 border-border px-1 py-1 text-center font-semibold tabular-nums sm:px-2 sm:py-1.5">
                         {formatShort(totals.workedMinutes)}
                       </td>
-                      <td className="px-2 py-1.5 text-center font-semibold tabular-nums text-primary">
+                      <td className="px-1 py-1 text-center font-semibold tabular-nums text-primary sm:px-2 sm:py-1.5">
                         {formatShort(totals.overtimeMinutes)}
                       </td>
                     </tr>
@@ -280,13 +285,13 @@ function SubHeads({ bold }: { bold?: boolean }) {
     <>
       <th
         className={cn(
-          "border-l border-border px-2 pb-1.5 text-center font-normal",
+          "border-l border-border px-1 pb-1 text-center font-normal sm:px-2 sm:pb-1.5",
           bold && "border-l-2",
         )}
       >
         Hrs
       </th>
-      <th className="px-2 pb-1.5 text-center font-normal">OT</th>
+      <th className="px-1 pb-1 text-center font-normal sm:px-2 sm:pb-1.5">OT</th>
     </>
   );
 }

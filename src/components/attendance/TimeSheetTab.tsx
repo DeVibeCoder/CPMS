@@ -187,18 +187,18 @@ export function TimeSheetTab({
             px-4 the padding alone was 288px of the row, more than three time
             columns' worth.
           */}
-          <Table className="min-w-[1060px] [&_td]:px-2 [&_th]:px-2 [&_td:first-child]:pl-4 [&_th:first-child]:pl-4 [&_td:last-child]:pr-4 [&_th:last-child]:pr-4">
+          <Table className="min-w-[680px] text-[10px] [&_button]:h-7 [&_input]:h-7 [&_input]:px-1 [&_td]:px-1 [&_td]:py-1.5 [&_th]:h-9 [&_th]:px-1 [&_td:first-child]:pl-2 [&_th:first-child]:pl-2 [&_td:last-child]:pr-2 [&_th:last-child]:pr-2 sm:min-w-[1060px] sm:text-sm sm:[&_button]:h-8 sm:[&_input]:h-8 sm:[&_input]:px-2 sm:[&_td]:px-2 sm:[&_td]:py-3 sm:[&_th]:h-11 sm:[&_th]:px-2 sm:[&_td:first-child]:pl-4 sm:[&_th:first-child]:pl-4 sm:[&_td:last-child]:pr-4 sm:[&_th:last-child]:pr-4">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[64px] sm:w-[86px]">Emp ID</TableHead>
-                <TableHead className="min-w-[128px] sm:min-w-[170px]">Name</TableHead>
-                <TableHead className="w-[74px] sm:w-[92px]">Start</TableHead>
-                <TableHead className="w-[96px] sm:w-[120px]">Breaks</TableHead>
-                <TableHead className="w-[74px] sm:w-[92px]">End</TableHead>
-                <TableHead className="w-[76px] text-right sm:w-[96px]">Total Hrs</TableHead>
-                <TableHead className="w-[70px] text-right sm:w-[88px]">OT Hrs</TableHead>
-                <TableHead className="w-[104px] sm:w-[132px]">Status</TableHead>
-                <TableHead className="min-w-[130px] sm:min-w-[160px]">Remarks</TableHead>
+                <TableHead className="w-[52px] sm:w-[86px]">Emp ID</TableHead>
+                <TableHead className="min-w-[104px] sm:min-w-[170px]">Name</TableHead>
+                <TableHead className="w-[54px] sm:w-[92px]">Start</TableHead>
+                <TableHead className="w-[68px] sm:w-[120px]">Breaks</TableHead>
+                <TableHead className="w-[54px] sm:w-[92px]">End</TableHead>
+                <TableHead className="w-[62px] text-right sm:w-[96px]">Total Hrs</TableHead>
+                <TableHead className="w-[56px] text-right sm:w-[88px]">OT Hrs</TableHead>
+                <TableHead className="w-[78px] sm:w-[132px]">Status</TableHead>
+                <TableHead className="min-w-[100px] sm:min-w-[160px]">Remarks</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -215,7 +215,7 @@ export function TimeSheetTab({
                     key={employee.id}
                     className={cn(away && departureTint(away.type))}
                   >
-                    <TableCell className="font-mono text-[10px] sm:text-xs">
+                    <TableCell className="font-mono text-[9px] sm:text-xs">
                       {employee.id}
                     </TableCell>
                     <TableCell>
