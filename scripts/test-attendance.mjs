@@ -735,9 +735,33 @@ test("withdrawing the departure takes the row away with it", () => {
   assert.equal(reconcileEntry(written, [], "E001", AT).action, "delete");
 });
 
-test("a sick day typed on the timesheet is never touched", () => {
-  const byHand = { employeeId: "E001", date: AT, status: "sick" };
-  assert.equal(reconcileEntry(byHand, [], "E001", AT).action, "keep");
+// The timesheet has no status control on it any more, so a status with no
+// booking behind it can only be left over — from a departure since withdrawn, or
+// from a sheet written when the dropdown still existed. There is nowhere left to
+// correct one by hand, which is why the rule has to.
+test("a status with no booking behind it is put back to present", () => {
+  const leftOver = { employeeId: "E001", date: AT, status: "sick", start: "07:00" };
+  const back = reconcileEntry(leftOver, [], "E001", AT);
+  assert.equal(back.action, "write");
+  assert.equal(back.entry.status, "present");
+  // Only the status was ever ours. The hours somebody typed stay.
+  assert.equal(back.entry.start, "07:00");
+});
+
+test("an ordinary worked day is left alone", () => {
+  assert.equal(reconcileEntry(worked, [], "E001", AT).action, "keep");
+});
+
+test("a booking that moves takes the old day back with it", () => {
+  const written = reconcileEntry(worked, vacation, "E001", AT).entry;
+  // Same person, same vacation, a week later: the day it used to cover is a
+  // working day again and its row goes.
+  const moved = [{ ...vacation[0], from: "2026-08-24", to: "2026-08-28" }];
+  assert.equal(reconcileEntry(written, moved, "E001", AT).action, "delete");
+  // And a day it now covers gets a row of its own, whether or not one was there.
+  const fresh = reconcileEntry(undefined, moved, "E001", "2026-08-25");
+  assert.equal(fresh.action, "write");
+  assert.equal(fresh.entry.status, "vacation");
 });
 
 test("a remark somebody wrote survives the status being written over it", () => {

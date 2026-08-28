@@ -174,9 +174,6 @@ const SAMPLE_STAFF: SampleStaff[] = [
         breaks: [LUNCH, { from: "13:00", to: "15:00", reason: "RAIN — NO PRODUCTION" }],
         remarks: "RELEASED FOR RAIN, BACK AT 1500",
       },
-      // A sick day recorded straight on the timesheet, with no departure behind
-      // it. Ordinary, and the row the auto-status rule must never touch.
-      5: { status: "sick", start: undefined, end: undefined, breaks: undefined },
     },
   },
   { id: "CP021", name: "ALI SHAMEEM", position: "ASSISTANT", slot: "p1-asst-4" },
@@ -319,6 +316,16 @@ export const MOCK_DEPARTURES: Departure[] = [
     employeeId: "CP027",
     type: "exit",
     from: addDays(MOCK_TODAY, -5),
+  },
+  // A sick spell that has been and gone, close enough to today to be visible on
+  // a timesheet somebody opens. The days it covers say Sick because of this row
+  // and nothing else — the timesheet has no way of its own to say so.
+  {
+    id: "dep-sample-sick-recent",
+    employeeId: "CP020",
+    type: "sick",
+    from: addDays(MOCK_TODAY, -6),
+    to: addDays(MOCK_TODAY, -5),
   },
   // Finished — these two are what History holds.
   {

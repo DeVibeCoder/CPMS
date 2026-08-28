@@ -7,13 +7,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Table,
   TableBody,
   TableCell,
@@ -31,7 +24,6 @@ import {
   sumEntries,
 } from "@/lib/attendance/calculations";
 import { awayOn, wasEmployedOn } from "@/lib/attendance/staff";
-import { ATTENDANCE_STATUSES, type AttendanceStatus } from "@/types/attendance";
 import type { Timesheets } from "./useTimesheets";
 import { StatTile, StatusBadge, departureTint } from "./shared";
 import { TimeField } from "./TimeField";
@@ -45,10 +37,13 @@ import { BreaksField } from "./BreaksField";
  * can be reopened, which on a real system would be the point where an approval
  * trail starts.
  *
- * Rows for people booked away fill themselves in. A supervisor who has already
- * recorded somebody's vacation on the Status tab should not have to say it again
- * every morning of it, and a sheet where they had to would drift out of step
- * with the staff list the first time somebody forgot.
+ * The status column is read-only, and deliberately so: it shows what the
+ * Employees → Status tab says and has no way to disagree with it. A supervisor
+ * who has recorded somebody's vacation should not have to say it again every
+ * morning of it — and a screen where they could say something different would
+ * drift out of step with the staff list the first time the two were typed
+ * differently. What is filled in here is hours; who was away is settled
+ * elsewhere.
  */
 export function TimeSheetTab({
   sheets,
@@ -110,7 +105,7 @@ export function TimeSheetTab({
       toast({
         variant: "destructive",
         title: "Some rows have no start or end time",
-        description: `${unfinished.map((r) => r.employee.name).join(", ")} — enter the times, or set the status to Sick, Vacation or Off site.`,
+        description: `${unfinished.map((r) => r.employee.name).join(", ")} — enter the times, or record the absence on Employees → Status and the row will fill itself in.`,
       });
       return;
     }
@@ -205,7 +200,7 @@ export function TimeSheetTab({
                     <TimeField
                       label="Start"
                       value={entry?.start}
-                      disabled={locked || entry?.status !== "present"}
+                      disabled={locked}
                       onChange={(v) => set(employee.id, { start: v })}
                     />
                     <div>
@@ -214,26 +209,23 @@ export function TimeSheetTab({
                       </div>
                       <BreaksField
                         entry={entry}
-                        disabled={locked || entry?.status !== "present"}
+                        disabled={locked}
                         onChange={(breaks) => set(employee.id, { breaks })}
                       />
                     </div>
                     <TimeField
                       label="End"
                       value={entry?.end}
-                      disabled={locked || entry?.status !== "present"}
+                      disabled={locked}
                       onChange={(v) => set(employee.id, { end: v })}
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {locked ? (
+                  <div className="grid grid-cols-2 items-center gap-2">
+                    {/* Wrapped, or the badge is blockified as a grid item and
+                        stretches across half the card. */}
+                    <div className="justify-self-start">
                       <StatusBadge status={entry?.status ?? "present"} />
-                    ) : (
-                      <StatusSelect
-                        value={entry?.status ?? "present"}
-                        onChange={(v) => set(employee.id, { status: v })}
-                      />
-                    )}
+                    </div>
                     <Input
                       className="h-9"
                       placeholder="Remarks"
@@ -279,9 +271,10 @@ export function TimeSheetTab({
                 {rows.map(({ employee, entry, totals, away }) => {
                   // A booked absence owns the row: the times are meaningless
                   // and the status is not a choice while it runs.
+                  // A booked absence owns the row as completely as a sign-off
+                  // does: there are no hours to record on a day somebody was
+                  // not here, and the status is not this screen's to argue with.
                   const locked = submitted || Boolean(away);
-                  const fieldsOff =
-                    locked || (entry?.status ?? "present") !== "present";
 
                   return (
                     <TableRow
@@ -303,14 +296,14 @@ export function TimeSheetTab({
                         <TimeField
                           aria-label={`Start for ${employee.name}`}
                           value={entry?.start}
-                          disabled={fieldsOff}
+                          disabled={locked}
                           onChange={(v) => set(employee.id, { start: v })}
                         />
                       </TableCell>
                       <TableCell>
                         <BreaksField
                           entry={entry}
-                          disabled={fieldsOff}
+                          disabled={locked}
                           onChange={(breaks) => set(employee.id, { breaks })}
                         />
                       </TableCell>
@@ -318,7 +311,7 @@ export function TimeSheetTab({
                         <TimeField
                           aria-label={`End for ${employee.name}`}
                           value={entry?.end}
-                          disabled={fieldsOff}
+                          disabled={locked}
                           onChange={(v) => set(employee.id, { end: v })}
                         />
                       </TableCell>
@@ -335,14 +328,7 @@ export function TimeSheetTab({
                         )}
                       </TableCell>
                       <TableCell>
-                        {locked ? (
-                          <StatusBadge status={entry?.status ?? "present"} />
-                        ) : (
-                          <StatusSelect
-                            value={entry?.status ?? "present"}
-                            onChange={(v) => set(employee.id, { status: v })}
-                          />
-                        )}
+                        <StatusBadge status={entry?.status ?? "present"} />
                       </TableCell>
                       <TableCell>
                         <Input
@@ -374,7 +360,8 @@ export function TimeSheetTab({
             </span>
           ) : (
             <span className="text-muted-foreground">
-              Times are 24-hour — type 0700. Check them, then complete the day.
+              Times are 24-hour — type 0700. Status follows Employees → Status:
+              book a vacation or a sick spell there and these rows fill in.
             </span>
           )}
         </div>
@@ -390,34 +377,5 @@ export function TimeSheetTab({
         )}
       </div>
     </div>
-  );
-}
-
-function StatusSelect({
-  value,
-  onChange,
-  disabled,
-}: {
-  value: AttendanceStatus;
-  onChange: (value: AttendanceStatus) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <Select
-      value={value}
-      disabled={disabled}
-      onValueChange={(v) => onChange(v as AttendanceStatus)}
-    >
-      <SelectTrigger className="h-8">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {ATTENDANCE_STATUSES.map((s) => (
-          <SelectItem key={s.value} value={s.value}>
-            {s.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
   );
 }

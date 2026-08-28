@@ -24,10 +24,9 @@ import { awayOn } from "./staff.ts";
  * else. So the rows are written, and the `auto` flag records that a departure
  * wrote them.
  *
- * That flag is the whole design. Without it there is no way to tell a vacation
- * row this module wrote from one a clerk set by hand on the timesheet, and
- * undoing a cancelled departure would mean either leaving stale leave behind or
- * deleting somebody's deliberate entry.
+ * The `auto` flag records which rows exist only because of a booking, so that
+ * withdrawing one can take its rows away again without touching a day somebody
+ * actually worked and wrote down.
  */
 
 /** The status a booked departure forces on a day, or null if none is booked. */
@@ -59,16 +58,23 @@ const KEEP: Reconciliation = { action: "keep" };
 /**
  * Bring one row into line with what is booked against that person that day.
  *
- * Booked: the row says so, with no times on it — a vacation day has no hours
- * and leaving a stale clock-in behind would put them into the totals.
+ * The booking is the only thing that decides a day's status. There is no way to
+ * say otherwise on the timesheet — the column shows what the Status tab says and
+ * nothing else — so this runs in both directions and always wins.
  *
- * Not booked: only rows this module wrote are touched. One somebody typed is
- * theirs, and a supervisor marking a day sick straight on the timesheet without
- * raising a departure is an ordinary thing to do. An automatic row that is no
- * longer justified is deleted outright rather than reset to Present, because an
- * empty Present row reads as "a day nobody filled in" and would hold up the
- * day's sign-off. The one exception is a row somebody has written a remark on:
- * the remark is theirs, so the row is handed back as an ordinary open day.
+ * Booked: the row says so, with no times on it. A vacation day has no hours, and
+ * leaving a stale clock-in behind would put them into the totals.
+ *
+ * Not booked: the day is an ordinary working day, whatever the row used to say.
+ * A status with no booking behind it can only be left over — from a booking
+ * since withdrawn, or from a sheet written when the timesheet still had a status
+ * dropdown on it — and with the dropdown gone there is nowhere left to correct
+ * one by hand. So it is corrected here.
+ *
+ * A row that exists *only* because of a booking is deleted rather than reset to
+ * Present. An empty Present row reads as a day nobody has filled in and would
+ * hold up the day's sign-off. One carrying times or a remark is kept: that part
+ * is somebody's own work, and only the status was ever ours.
  */
 export function reconcileEntry(
   entry: TimesheetEntry | undefined,
@@ -99,14 +105,17 @@ export function reconcileEntry(
     };
   }
 
-  if (!entry || !entry.auto) return KEEP;
-  if (entry.remarks?.trim()) {
-    return {
-      action: "write",
-      entry: { ...entry, status: "present", auto: undefined },
-    };
-  }
-  return { action: "delete" };
+  if (!entry) return KEEP;
+
+  const written = Boolean(
+    entry.start || entry.end || entry.breaks?.length || entry.remarks?.trim(),
+  );
+  if (entry.auto && !written) return { action: "delete" };
+  if (entry.status === "present" && !entry.auto) return KEEP;
+  return {
+    action: "write",
+    entry: { ...entry, status: "present", auto: undefined },
+  };
 }
 
 /** The map key a timesheet row is stored under. One person, one day. */

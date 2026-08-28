@@ -73,15 +73,14 @@ export interface Departure {
   to?: string;
 }
 
-/** Why somebody is not on the clock. Present is the ordinary case. */
+/**
+ * Why somebody is not on the clock. Present is the ordinary case.
+ *
+ * Never chosen: a day's status is derived from what is booked against the person
+ * on the Status tab, and the timesheet has no control that can disagree with it.
+ * See `lib/attendance/autoStatus.ts`.
+ */
 export type AttendanceStatus = "present" | "sick" | "vacation" | "off-site";
-
-export const ATTENDANCE_STATUSES: { value: AttendanceStatus; label: string }[] = [
-  { value: "present", label: "Present" },
-  { value: "sick", label: "Sick" },
-  { value: "vacation", label: "Vacation" },
-  { value: "off-site", label: "Off site" },
-];
 
 /**
  * A gap in the day, as two clock times.

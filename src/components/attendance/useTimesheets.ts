@@ -268,13 +268,14 @@ export function useTimesheets(): Timesheets {
           date,
           status: "present" as const,
         };
-        // Setting a status or a time by hand makes the row somebody's own:
-        // leaving the flag on would let a later reconciliation delete what they
-        // had just entered. A remark is not that — while a departure covers the
-        // day it is the only field still enabled, and writing one is not a claim
-        // on the day's status.
+        // Typing hours into a row makes it somebody's own work: leaving the
+        // flag on would let a later reconciliation delete what they had just
+        // entered. A remark is not that — while a departure covers the day it is
+        // the only field still enabled, and writing one is not a claim on the
+        // day's status. Status itself never arrives here any more; it is settled
+        // entirely by `lib/attendance/autoStatus.ts`.
         const claimed =
-          "status" in patch || "start" in patch || "end" in patch || "breaks" in patch;
+          "start" in patch || "end" in patch || "breaks" in patch;
         next.set(id, {
           ...existing,
           ...patch,
