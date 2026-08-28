@@ -116,6 +116,60 @@ const PRINTABLE = {
 const PAPER_COLUMN = { min: 110, max: 340 };
 const SCREEN_COLUMN = { min: 132, max: 200 };
 
+/**
+ * The chart on a page of its own, as a whole HTML document.
+ *
+ * Every stylesheet the app has is carried across rather than picked through:
+ * the chart is built out of the same tokens and utilities as everything else,
+ * and a hand-picked subset would go stale the first time one of them changed.
+ */
+function printablePage(body: string): string {
+  const styles = [
+    ...document.querySelectorAll('style, link[rel="stylesheet"]'),
+  ]
+    .map((node) => node.outerHTML)
+    .join("");
+
+  // The copy is an `about:blank` document, so it is told where the app lives —
+  // otherwise a stylesheet or a font referred to by a relative path resolves
+  // against nothing and the chart prints unstyled.
+  return `<!doctype html><html><head><meta charset="utf-8">
+  <base href="${document.baseURI}">${styles}<style>
+    @page { size: ${PAGE.name}; margin: ${PAGE.margin}in; }
+    html, body { margin: 0; padding: 0; background: #fff; }
+    /* Faint status washes survive a printer only if backgrounds are kept. */
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  </style></head><body>${body}</body></html>`;
+}
+
+/**
+ * Wait for the copied page to be worth measuring.
+ *
+ * The stylesheets are still loading when the document closes, and measuring
+ * before the fonts land would fit the chart to the wrong text. Capped, because
+ * a stylesheet that never arrives must not mean a Print button that never does
+ * anything — an unfitted chart still prints.
+ */
+function pageReady(carrier: HTMLIFrameElement): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    const timer = window.setTimeout(done, 4000);
+    const finish = () => {
+      window.clearTimeout(timer);
+      const fonts = carrier.contentDocument?.fonts;
+      if (fonts) void fonts.ready.then(done, done);
+      else done();
+    };
+    if (carrier.contentDocument?.readyState === "complete") finish();
+    else carrier.addEventListener("load", finish, { once: true });
+  });
+}
+
 /** Red for an exit, blue for a vacation — the same colours the tabs use. */
 const SLOT_STYLE: Record<SlotState, string> = {
   vacant: "border border-dashed border-border bg-muted/40",
@@ -132,7 +186,8 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
   const sheetRef = useRef<HTMLDivElement>(null);
   /** The scroller the chart is drawn into. What "fits on screen" is measured. */
   const frameRef = useRef<HTMLDivElement>(null);
-  const [saving, setSaving] = useState(false);
+  /** A print or a download is being built. Neither may run twice at once. */
+  const [busy, setBusy] = useState(false);
 
   const isAdmin = useAuth((s) => s.user?.role === "admin");
 
@@ -191,7 +246,7 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
    * chart still has width to spare, narrow once it has run out; nine halvings
    * land within a pixel, and each one costs a single reflow.
    */
-  const fitToPage = (sheet: HTMLDivElement): number => {
+  const fitToPage = (sheet: HTMLElement): number => {
     let narrow = PAPER_COLUMN.min;
     let wide = PAPER_COLUMN.max;
 
@@ -268,7 +323,7 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
    * so a cancelled print dialog cannot leave the page stuck in it.
    */
   const onPaper = async <T,>(
-    run: (sheet: HTMLDivElement, scale: number) => T | Promise<T>,
+    run: (sheet: HTMLElement, scale: number) => T | Promise<T>,
   ): Promise<T | undefined> => {
     const sheet = sheetRef.current;
     if (!sheet) return undefined;
@@ -285,42 +340,62 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
   /**
    * Print the chart on one Letter page, landscape.
    *
-   * The paper is chosen by an `@page` rule, which has no selector and so cannot
-   * be scoped to this component — it is injected for the duration of the print
-   * and taken out again, otherwise printing a stock report from anywhere else in
-   * the app would come out landscape too.
+   * The chart is copied into a page of its own, off-screen, and *that* is what
+   * goes to the printer. The app is never touched.
+   *
+   * Printing the live document meant putting the whole application into print
+   * media for the duration — hiding the shell, collapsing its layout, resizing
+   * the chart under it — and coming back out of that was a hard enough jolt
+   * that the page rebuilt itself, so leaving the print dialog flashed through a
+   * reload before landing back on the chart. Nothing about a print should be
+   * visible on screen at all, and now none of it is.
    */
-  const onPrint = () =>
-    onPaper((sheet, scale) => {
-      const root = document.documentElement;
-      root.style.setProperty("--chart-print-scale", String(scale));
+  const onPrint = async () => {
+    const sheet = sheetRef.current;
+    if (!sheet || busy) return;
+    setBusy(true);
 
-      // Everything between the chart and <body> is marked so the print
-      // stylesheet can keep the chain and drop the rest of the app.
-      const ancestors: HTMLElement[] = [];
-      for (
-        let el = sheet.parentElement;
-        el && el !== document.body;
-        el = el.parentElement
-      ) {
-        el.classList.add("chart-print-ancestor");
-        ancestors.push(el);
-      }
+    // Off-screen rather than hidden: it still has to lay out to be measured.
+    const carrier = document.createElement("iframe");
+    carrier.setAttribute("aria-hidden", "true");
+    carrier.title = CHART_TITLE;
+    carrier.style.cssText =
+      "position:fixed;left:-10000px;top:0;width:1200px;height:900px;border:0";
 
-      const page = document.createElement("style");
-      page.textContent = `@page { size: ${PAGE.name}; margin: ${PAGE.margin}in; }`;
-      document.head.append(page);
+    try {
+      document.body.append(carrier);
+      const doc = carrier.contentDocument;
+      const view = carrier.contentWindow;
+      if (!doc || !view) throw new Error("The print page could not be built.");
 
-      root.classList.add("printing-chart");
-      try {
-        window.print();
-      } finally {
-        root.classList.remove("printing-chart");
-        root.style.removeProperty("--chart-print-scale");
-        for (const el of ancestors) el.classList.remove("chart-print-ancestor");
-        page.remove();
-      }
-    });
+      const copy = sheet.cloneNode(true) as HTMLElement;
+      copy.classList.add("chart-page");
+      // The screen fit travels with the clone; the page wants its own.
+      copy.style.removeProperty("--org-col");
+
+      doc.open();
+      doc.write(printablePage(copy.outerHTML));
+      doc.close();
+      await pageReady(carrier);
+
+      const paper = doc.querySelector<HTMLElement>(".chart-sheet");
+      if (paper) paper.style.zoom = String(fitToPage(paper));
+
+      view.focus();
+      view.print();
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "The chart could not be printed",
+        description: "Use Download instead, and print the image.",
+      });
+    } finally {
+      // Not removed straight away: a browser that runs `print()` without
+      // blocking would lose the page out from under its own dialog.
+      window.setTimeout(() => carrier.remove(), 60_000);
+      setBusy(false);
+    }
+  };
 
   /**
    * Download the chart as a PNG, on the same page.
@@ -333,7 +408,8 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
    * button produces — same paper, same margins, same fit.
    */
   const onDownload = async () => {
-    setSaving(true);
+    if (busy) return;
+    setBusy(true);
     try {
       await onPaper(async (sheet) => {
         const { default: html2canvas } = await import("html2canvas");
@@ -391,7 +467,7 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
         description: "Use Print instead, and choose Save as PDF.",
       });
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   };
 
@@ -496,11 +572,11 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
           Print and Download both give one Letter page, landscape.
         </p>
         <div className="ml-auto flex gap-2">
-          <Button variant="outline" size="sm" onClick={onPrint}>
+          <Button variant="outline" size="sm" disabled={busy} onClick={onPrint}>
             <Printer className="h-4 w-4" />
             Print
           </Button>
-          <Button variant="outline" size="sm" disabled={saving} onClick={onDownload}>
+          <Button variant="outline" size="sm" disabled={busy} onClick={onDownload}>
             <Download className="h-4 w-4" />
             Download
           </Button>
@@ -513,12 +589,11 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
         ref={frameRef}
         className="overflow-x-auto rounded-lg border border-border bg-card scrollbar-thin"
       >
-        {/* `print-sheet` is what the print stylesheet scopes to, and
-            `chart-page` is added to this same element while a print or a
-            download is running — see `onPaper`. Nothing here uses `print:`
-            utilities: the layout is measured just before printing, and a rule
-            that changed it afterwards would make that measurement a lie. */}
-        <div ref={sheetRef} className="print-sheet chart-sheet">
+        {/* `chart-page` is added to this element — or to a copy of it — for
+            as long as it is being sized to paper. Nothing here uses `print:`
+            utilities: what prints is a copy in a document of its own, and this
+            one is never in print media at all. */}
+        <div ref={sheetRef} className="chart-sheet">
           <div className="border-b border-border pb-2 text-center">
             <h2 className="text-[19px] font-bold tracking-tight">{CHART_TITLE}</h2>
           </div>

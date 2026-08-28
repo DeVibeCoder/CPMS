@@ -215,62 +215,10 @@
     box-shadow: none !important;
   }
 
-  /* The org chart prints on its own: everything the app wraps around it —
-     sidebar, header, tabs, toolbars — is chrome that would push the chart onto
-     a second page and print nothing useful on the first.
-
-     Everything but the chart and the elements it hangs from is taken out of the
-     page entirely. Merely hiding it is not enough: an invisible sidebar still
-     occupies its full height, and the blank pages that follow the chart are that
-     height being printed. `onPrint` marks the chart's ancestors on the way past;
-     each of them then keeps only the child that leads to the chart.
-
-     All of it scoped to a class the chart puts on <html> for the length of its
-     own print, so printing a stock report from anywhere else is untouched. */
-  .printing-chart body > *:not(.chart-print-ancestor),
-  .printing-chart
-    .chart-print-ancestor
-    > *:not(.chart-print-ancestor):not(.print-sheet) {
-    display: none;
-  }
-
-  /* The shell's own layout goes with it — a sidebar's grid column or a page's
-     padding would otherwise indent the chart off the edge of the paper. */
-  .printing-chart .chart-print-ancestor {
-    display: block;
-    position: static;
-    margin: 0;
-    padding: 0;
-    width: auto;
-    max-width: none;
-    min-height: 0;
-    height: auto;
-    overflow: visible;
-    border: 0;
-    background: none;
-    box-shadow: none;
-    transform: none;
-  }
-
-  .printing-chart .print-sheet {
-    /* `zoom`, not `transform: scale()`. A transform is painted after layout, so
-       the box it leaves behind stays full size and drags a second, empty page
-       along behind the chart. Zoom shrinks the box as well as the drawing, so
-       the chart genuinely occupies one page.
-
-       The factor is measured just before printing — see `OrgChartTab`'s
-       `fitToPage`. What is being scaled is a layout the same code has already
-       widened to the shape of the paper, so this is the last few per cent
-       rather than the whole fit. */
-    zoom: var(--chart-print-scale, 1);
-    margin-inline: auto;
-  }
-
-  /* Faint status washes survive a printer only if backgrounds are kept. */
-  .print-sheet * {
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
+  /* The org chart is not printed from here at all: it is copied into an
+     off-screen page of its own and that is what goes to the printer, so the app
+     never has to be put into print media and taken back out again. See
+     `OrgChartTab`'s `onPrint`. */
 }
 
 /* =============================================================================
