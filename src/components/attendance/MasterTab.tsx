@@ -106,7 +106,7 @@ export function MasterTab({ sheets }: { sheets: Timesheets }) {
 
       <div className="flex flex-wrap items-center gap-2">
         <Select value={period} onValueChange={(v) => setPeriod(v as "week" | "month")}>
-          <SelectTrigger className="h-9 w-[110px]">
+          <SelectTrigger className="h-9 w-[104px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -117,7 +117,7 @@ export function MasterTab({ sheets }: { sheets: Timesheets }) {
 
         {period === "week" ? (
           <Select value={weekStart} onValueChange={setWeekStart}>
-            <SelectTrigger className="h-9 w-[220px]">
+            <SelectTrigger className="h-9 w-[190px] sm:w-[220px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -132,7 +132,7 @@ export function MasterTab({ sheets }: { sheets: Timesheets }) {
           </Select>
         ) : (
           <Select value={month} onValueChange={setMonth}>
-            <SelectTrigger className="h-9 w-[170px]">
+            <SelectTrigger className="h-9 w-[150px] sm:w-[170px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -145,7 +145,7 @@ export function MasterTab({ sheets }: { sheets: Timesheets }) {
           </Select>
         )}
 
-        <div className="relative min-w-[170px] flex-1 sm:max-w-xs">
+        <div className="relative min-w-[150px] flex-1 sm:max-w-xs">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             className="h-9 pl-8"
@@ -156,7 +156,7 @@ export function MasterTab({ sheets }: { sheets: Timesheets }) {
         </div>
 
         <Select value={department} onValueChange={setDepartment}>
-          <SelectTrigger className="h-9 w-[170px]">
+          <SelectTrigger className="h-9 w-[150px] sm:w-[170px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -184,7 +184,7 @@ export function MasterTab({ sheets }: { sheets: Timesheets }) {
               <table className="w-full border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-border">
-                    <th className="sticky left-0 z-10 min-w-[190px] bg-card px-3 py-2 text-left text-xs font-medium text-muted-foreground">
+                    <th className="sticky left-0 z-10 min-w-[130px] bg-card px-2 py-2 text-left text-xs font-medium text-muted-foreground sm:min-w-[190px] sm:px-3">
                       Employee
                     </th>
                     {dates.map((date) => (
@@ -209,7 +209,7 @@ export function MasterTab({ sheets }: { sheets: Timesheets }) {
                     </th>
                   </tr>
                   <tr className="border-b border-border text-[10px] uppercase text-muted-foreground">
-                    <th className="sticky left-0 z-10 bg-card px-3 pb-1.5 text-left font-normal">
+                    <th className="sticky left-0 z-10 bg-card px-2 pb-1.5 text-left font-normal sm:px-3">
                       {dates.length} day{dates.length === 1 ? "" : "s"}
                     </th>
                     {dates.map((date) => (

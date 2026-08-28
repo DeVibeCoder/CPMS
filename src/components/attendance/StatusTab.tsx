@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
+import { useIsMobile } from "@/hooks/useMediaQuery";
 import { formatDayMonthYear } from "@/lib/attendance/calculations";
 import { hasExited } from "@/lib/attendance/staff";
 import {
@@ -132,7 +133,7 @@ export function HistoryTab({ sheets }: { sheets: Timesheets }) {
       empty="Nothing has finished yet. A vacation, sick spell or day off site moves here the day after its To date; an exit moves here on the day it happens."
       action={
         <Select value={who} onValueChange={(v) => setWho(v as typeof who)}>
-          <SelectTrigger className="ml-auto h-9 w-[200px]">
+          <SelectTrigger className="ml-auto h-9 w-full sm:w-[200px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -165,6 +166,7 @@ function DepartureList({
   const [query, setQuery] = useState("");
   const [type, setType] = useState<DepartureType | "all">("all");
   const [month, setMonth] = useState("all");
+  const isMobile = useIsMobile();
 
   const people = useMemo(
     () => new Map(sheets.roster.map((e) => [e.id, e])),
@@ -203,7 +205,7 @@ function DepartureList({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[190px] flex-1 sm:max-w-xs">
+        <div className="relative min-w-[160px] flex-1 sm:max-w-xs">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             className="h-9 pl-8"
@@ -214,7 +216,7 @@ function DepartureList({
         </div>
 
         <Select value={type} onValueChange={(v) => setType(v as typeof type)}>
-          <SelectTrigger className="h-9 w-[140px]">
+          <SelectTrigger className="h-9 w-[132px] sm:w-[140px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -228,7 +230,7 @@ function DepartureList({
         </Select>
 
         <Select value={month} onValueChange={setMonth}>
-          <SelectTrigger className="h-9 w-[165px]">
+          <SelectTrigger className="h-9 w-[150px] sm:w-[165px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -248,9 +250,60 @@ function DepartureList({
         {action}
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto scrollbar-thin">
+      {isMobile ? (
+        <div className="space-y-2">
+          {rows.map((d) => (
+            <Card key={d.id}>
+              <CardContent className="space-y-1.5 p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate font-medium leading-tight">
+                      {people.get(d.employeeId)?.name ?? "—"}
+                    </div>
+                    <div className="font-mono text-[11px] text-muted-foreground">
+                      {d.employeeId}
+                    </div>
+                  </div>
+                  <DepartureBadge type={d.type} />
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs tabular-nums text-muted-foreground">
+                    {formatDayMonthYear(d.from)}
+                    {/* An exit has no return date, and neither has an
+                        open-ended spell. Both read as a start and nothing
+                        after it rather than as a range with a hole in it. */}
+                    {d.type !== "exit" && d.to
+                      ? ` – ${formatDayMonthYear(d.to)}`
+                      : ""}
+                  </div>
+                  {!readOnly && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-muted-foreground hover:text-destructive"
+                      onClick={() => onRemove?.(d)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+
+          {rows.length === 0 && (
+            <Card>
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                {departures.length === 0 ? empty : "Nothing matches those filters."}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -314,9 +367,9 @@ function DepartureList({
                 )}
               </TableBody>
             </Table>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

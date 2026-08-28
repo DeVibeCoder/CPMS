@@ -352,7 +352,7 @@ export function TimeSheetTab({
 
       {/* Sign-off */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3">
-        <div className="text-sm">
+        <div className="min-w-0 flex-1 text-sm">
           {submitted ? (
             <span className="flex items-center gap-1.5 text-muted-foreground">
               <Lock className="h-3.5 w-3.5" />
@@ -365,12 +365,19 @@ export function TimeSheetTab({
             </span>
           )}
         </div>
+        {/* Full width on a phone: this is the one button on the screen that
+            finishes the day, and it should not end up a thumbnail wedged
+            against the edge after the sentence beside it wraps. */}
         {submitted ? (
-          <Button variant="outline" onClick={() => sheets.reopenDate(date)}>
+          <Button
+            variant="outline"
+            className="w-full sm:w-auto"
+            onClick={() => sheets.reopenDate(date)}
+          >
             Reopen
           </Button>
         ) : (
-          <Button onClick={complete}>
+          <Button className="w-full sm:w-auto" onClick={complete}>
             <CheckCircle2 className="mr-2 h-4 w-4" />
             Complete day
           </Button>

@@ -588,13 +588,16 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
     <div className="space-y-3">
       {/* Toolbar — not part of what prints or downloads. */}
       <div className="flex flex-wrap items-center gap-2 print:hidden">
-        <p className="text-sm text-muted-foreground">
+        <p className="order-2 w-full text-sm text-muted-foreground sm:order-none sm:w-auto sm:flex-1">
           {isAdmin
             ? "Click any box to put somebody in that post. Posts are fixed; who fills them is not."
             : "Posts and who fills them. Only an administrator can change assignments."}{" "}
           Print and Download both give one Letter page, landscape.
         </p>
-        <div className="ml-auto flex gap-2">
+        {/* On a phone the buttons come first and the explanation underneath:
+            somebody who opened this to print it should not have to read a
+            paragraph to find the button. */}
+        <div className="order-1 ml-auto flex gap-2 sm:order-none">
           <Button variant="outline" size="sm" disabled={busy} onClick={onPrint}>
             <Printer className="h-4 w-4" />
             Print

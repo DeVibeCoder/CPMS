@@ -49,6 +49,7 @@ import { formatDayMonthYear } from "@/lib/attendance/calculations";
 import { DEFAULT_SECTION } from "@/lib/attendance/sections";
 import { awayOn, exitOf, isBooked, isLeaving, upper } from "@/lib/attendance/staff";
 import { toast } from "@/hooks/use-toast";
+import { useIsMobile } from "@/hooks/useMediaQuery";
 import { useAuth } from "@/store/auth";
 import { DEPARTURE_LABELS, type Employee } from "@/types/attendance";
 import type { Timesheets } from "./useTimesheets";
@@ -118,6 +119,7 @@ function StaffList({ sheets }: { sheets: Timesheets }) {
   // person is a different thing from reading the list, so it asks separately —
   // if Attendance is ever opened up, these stay shut.
   const isAdmin = useAuth((s) => s.user?.role === "admin");
+  const isMobile = useIsMobile();
 
   const source = sheets.employees;
 
@@ -189,7 +191,7 @@ function StaffList({ sheets }: { sheets: Timesheets }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[190px] flex-1 sm:max-w-xs">
+        <div className="relative min-w-[160px] flex-1 sm:max-w-xs">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             className="h-9 pl-8"
@@ -199,7 +201,7 @@ function StaffList({ sheets }: { sheets: Timesheets }) {
           />
         </div>
         <Select value={department} onValueChange={setDepartment}>
-          <SelectTrigger className="h-9 w-[180px]">
+          <SelectTrigger className="h-9 w-[150px] sm:w-[180px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -217,61 +219,82 @@ function StaffList({ sheets }: { sheets: Timesheets }) {
 
         {/* Bulk tools, grouped to the right so they read as maintenance rather
             than part of looking somebody up. */}
-        {(
-          <div className="ml-auto flex flex-wrap gap-2">
-            <Button size="sm" onClick={() => setAdding(true)}>
-              <UserPlus className="h-4 w-4" />
-              Add staff
-            </Button>
-            <Button variant="outline" size="sm" onClick={onDownloadTemplate}>
-              <FileDown className="h-4 w-4" />
-              Template
-            </Button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".csv,text/csv"
-              className="hidden"
-              onChange={(e) => onImport(e.target.files?.[0])}
-            />
+        {/* Two to a row on a phone rather than a ragged wrap: five buttons of
+            different widths reflow into something that looks broken, and these
+            are the ones a clerk reaches for least often. */}
+        <div className="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:flex sm:w-auto sm:flex-wrap">
+          <Button size="sm" className="w-full sm:w-auto" onClick={() => setAdding(true)}>
+            <UserPlus className="h-4 w-4" />
+            Add staff
+          </Button>
+          <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={onDownloadTemplate}>
+            <FileDown className="h-4 w-4" />
+            Template
+          </Button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => onImport(e.target.files?.[0])}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full sm:w-auto"
+            disabled={importing}
+            onClick={() => fileRef.current?.click()}
+          >
+            {importing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="h-4 w-4" />
+            )}
+            Import
+          </Button>
+          <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={onExport}>
+            <Download className="h-4 w-4" />
+            Export
+          </Button>
+          {/* For starting again on a corrected list. Deleting four hundred
+              people one at a time is not a start. */}
+          {isAdmin && (
             <Button
               variant="outline"
               size="sm"
-              disabled={importing}
-              onClick={() => fileRef.current?.click()}
+              className="w-full text-destructive hover:bg-destructive/10 hover:text-destructive sm:w-auto"
+              disabled={sheets.employees.length + sheets.inactive.length === 0}
+              onClick={() => setConfirmClear(true)}
             >
-              {importing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Upload className="h-4 w-4" />
-              )}
-              Import
+              <Trash2 className="h-4 w-4" />
+              Remove all
             </Button>
-            <Button variant="outline" size="sm" onClick={onExport}>
-              <Download className="h-4 w-4" />
-              Export
-            </Button>
-            {/* For starting again on a corrected list. Deleting four hundred
-                people one at a time is not a start. */}
-            {isAdmin && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                disabled={sheets.employees.length + sheets.inactive.length === 0}
-                onClick={() => setConfirmClear(true)}
-              >
-                <Trash2 className="h-4 w-4" />
-                Remove all
-              </Button>
-            )}
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto scrollbar-thin">
+      {isMobile ? (
+        <div className="space-y-2">
+          {rows.map((employee) => (
+            <StaffCard
+              key={employee.id}
+              employee={employee}
+              sheets={sheets}
+              isAdmin={isAdmin}
+              onEdit={() => setEditing(employee)}
+            />
+          ))}
+          {rows.length === 0 && (
+            <Card>
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                <EmptyMessage filtered={source.length > 0} />
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -305,9 +328,9 @@ function StaffList({ sheets }: { sheets: Timesheets }) {
                 )}
               </TableBody>
             </Table>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       <StaffDialog
         open={adding}
@@ -423,6 +446,94 @@ function StaffList({ sheets }: { sheets: Timesheets }) {
 }
 
 /**
+ * One person, on a phone.
+ *
+ * The same row, stacked, because six columns on a 360px screen is either
+ * unreadable or a sideways scroll — and a staff list you have to drag around is
+ * one nobody checks. What a supervisor looks for here is a name and where that
+ * person is, so those two are the top line and everything else is underneath.
+ */
+function StaffCard({
+  employee,
+  sheets,
+  isAdmin,
+  onEdit,
+}: {
+  employee: Employee;
+  sheets: Timesheets;
+  isAdmin: boolean;
+  onEdit: () => void;
+}) {
+  return (
+    <Card className={cn(rowTint(employee, sheets))}>
+      <CardContent className="space-y-1.5 p-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="truncate font-medium leading-tight">
+              {employee.name}
+            </div>
+            <div className="font-mono text-[11px] text-muted-foreground">
+              {employee.id}
+            </div>
+          </div>
+          <PresenceBadge status={sheets.presence(employee)} />
+        </div>
+
+        <div className="text-xs text-muted-foreground">
+          {[employee.department, employee.position].filter(Boolean).join(" · ") ||
+            "—"}
+        </div>
+
+        <RowNote employee={employee} sheets={sheets} />
+
+        {isAdmin && (
+          <div className="flex justify-end gap-1 pt-1">
+            <Button variant="outline" size="sm" onClick={onEdit}>
+              <Pencil className="h-3.5 w-3.5" />
+              Edit
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-muted-foreground hover:text-destructive"
+              onClick={() => removeWithNotice(employee, sheets)}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Remove
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * The wash behind a highlighted person.
+ *
+ * A pending exit outranks a spell away, because it is the more consequential
+ * news. Either way the wash is the colour of the thing causing it, so the row
+ * and its badge agree — red for an exit, and never red for sick.
+ */
+function rowTint(employee: Employee, sheets: Timesheets): string | undefined {
+  const { departures, today } = sheets;
+  if (isLeaving(departures, employee.id, today)) return departureTint("exit");
+  const away = awayOn(departures, employee.id, today);
+  return away ? departureTint(away.type) : undefined;
+}
+
+/** Delete somebody, and say what that did and did not do. */
+function removeWithNotice(employee: Employee, sheets: Timesheets) {
+  sheets.removeEmployee(employee.id);
+  toast({
+    variant: "success",
+    title: `${employee.name} removed`,
+    description:
+      "Their departures and timesheet rows went with them. For somebody who is actually leaving, book an Exit instead — that keeps the history.",
+  });
+}
+
+/**
  * One person.
  *
  * The row is highlighted for a booked exit and for a spell away that has
@@ -441,21 +552,8 @@ function StaffRow({
   isAdmin: boolean;
   onEdit: () => void;
 }) {
-  const { departures, today } = sheets;
-  const leaving = isLeaving(departures, employee.id, today);
-  const away = awayOn(departures, employee.id, today);
-
-  // A pending exit outranks a spell away, because it is the more consequential
-  // news. Either way the wash is the colour of the thing causing it, so the row
-  // and its badge agree — red for an exit, and never red for sick.
-  const tint = leaving
-    ? departureTint("exit")
-    : away
-      ? departureTint(away.type)
-      : undefined;
-
   return (
-    <TableRow className={cn(tint)}>
+    <TableRow className={cn(rowTint(employee, sheets))}>
       <TableCell className="font-mono text-xs">{employee.id}</TableCell>
       <TableCell>
         <div className="font-medium leading-tight">{employee.name}</div>
@@ -487,15 +585,7 @@ function StaffRow({
               size="icon"
               className="h-8 w-8 text-muted-foreground hover:text-destructive"
               aria-label={`Remove ${employee.name}`}
-              onClick={() => {
-                sheets.removeEmployee(employee.id);
-                toast({
-                  variant: "success",
-                  title: `${employee.name} removed`,
-                  description:
-                    "Their departures and timesheet rows went with them. For somebody who is actually leaving, book an Exit instead — that keeps the history.",
-                });
-              }}
+              onClick={() => removeWithNotice(employee, sheets)}
             >
               <Trash2 className="h-3.5 w-3.5" />
             </Button>
