@@ -7,6 +7,7 @@ import type {
   PresenceStatus,
   TimesheetEntry,
 } from "../../types/attendance.ts";
+import { daysInclusive } from "./calculations.ts";
 
 /**
  * What a departure means on a given date.
@@ -87,6 +88,24 @@ export function awayOn(
       date >= d.from &&
       (!d.to || date <= d.to),
   );
+}
+
+/**
+ * How long a spell away runs, in days, counting both ends.
+ *
+ * Null when there is no answer to give rather than a zero or a guess: an exit
+ * has no end because nobody comes back from it, and a spell entered with no To
+ * date is open — somebody signed off sick until further notice is off for a
+ * length that is not yet known. Both read as a dash, which is honest; a "1"
+ * against an open-ended sick note would not be.
+ *
+ * From and To are both days off, so a vacation from Monday to Friday is five
+ * days. That is the number the person taking it and the person approving it both
+ * mean, and it is the number this shows.
+ */
+export function departureDays(departure: Departure): number | null {
+  if (departure.type === "exit" || !departure.to) return null;
+  return daysInclusive(departure.from, departure.to);
 }
 
 /**

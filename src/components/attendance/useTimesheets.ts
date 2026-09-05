@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HISTORY_DAYS, attendanceSource } from "@/data/attendance";
 import { toast } from "@/hooks/use-toast";
 import {
+  bookedStatus,
   entryKey as key,
   reconcileEntries,
   reconcileEntry,
@@ -23,6 +24,11 @@ import type {
   TimesheetEntry,
 } from "@/types/attendance";
 import type { ParsedEmployee } from "@/lib/attendance/employeeCsv";
+import {
+  resolveTimings,
+  type ParsedTiming,
+  type ResolvedTimings,
+} from "@/lib/attendance/timesheetCsv";
 
 /**
  * Holds the timesheets the screens work on.
@@ -95,6 +101,19 @@ export interface Timesheets {
     date: string,
     patch: Partial<TimesheetEntry>,
   ) => void;
+  /**
+   * Apply a parsed timings file to the rows on screen.
+   *
+   * Checked against the plant's records before anything is written: a row for a
+   * day already completed, or one carrying hours for somebody booked on
+   * vacation, is refused rather than applied. Returns the same report it acted
+   * on, so the screen can show what went in and what did not.
+   *
+   * It never completes a day. Importing fills the rows in; a supervisor still
+   * reads them and presses Complete day, which is the only thing that puts a
+   * date into the master sheet.
+   */
+  importTimings: (rows: ParsedTiming[]) => ResolvedTimings;
   isSubmitted: (date: string) => boolean;
   submitDate: (date: string) => void;
   reopenDate: (date: string) => void;
@@ -354,6 +373,70 @@ export function useTimesheets(): Timesheets {
       });
     },
     [],
+  );
+
+  /**
+   * Apply a parsed timings file.
+   *
+   * Two steps, kept apart on purpose. `resolveTimings` decides what the file is
+   * allowed to do and lives in `lib/attendance/timesheetCsv.ts`, where it can be
+   * tested against a whole plant's worth of awkward rows without React; this
+   * hook supplies the four things the file cannot know — who is on the staff
+   * list, who had left, what is booked against them, and which days are already
+   * completed — and then writes the survivors.
+   *
+   * Every surviving row goes in as one state update rather than forty. The flush
+   * that follows sends the difference, so nothing here saves anything itself.
+   *
+   * Blank cells were already dropped by the resolver, so a patch only ever
+   * carries what the file actually said. That is what lets a register covering
+   * the morning shift be imported without erasing the afternoon.
+   *
+   * The day is deliberately not completed. Importing a date fills its rows in
+   * and stops there: the sheet is read, corrected where the register was wrong,
+   * and signed off by hand — which is the act that puts a date into the master
+   * sheet, and not one a file gets to perform.
+   */
+  const importTimings = useCallback(
+    (parsed: ParsedTiming[]): ResolvedTimings => {
+      const onRoster = new Set(roster.map((e) => e.id));
+      const result = resolveTimings(parsed, {
+        known: (id) => onRoster.has(id),
+        employedOn: (id, date) => wasEmployedOn(departures, id, date),
+        bookedStatus: (id, date) => bookedStatus(departures, id, date),
+        isSubmitted: (date) => submitted.has(date),
+        earliest: since,
+        today,
+      });
+
+      if (result.changes.length > 0) {
+        setEntries((current) => {
+          const next = new Map(current);
+          for (const change of result.changes) {
+            const id = key(change.employeeId, change.date);
+            const existing = next.get(id) ?? {
+              employeeId: change.employeeId,
+              date: change.date,
+              status: "present" as const,
+            };
+            const { employeeId: _id, date: _date, ...patch } = change;
+            // Hours read off a register are the plant's own record of the day,
+            // exactly as typed ones are — so the row stops being one the
+            // automatic status rule may take away again.
+            const claimed = Boolean(patch.start || patch.end || patch.breaks);
+            next.set(id, {
+              ...existing,
+              ...patch,
+              ...(claimed ? { auto: undefined } : {}),
+            });
+          }
+          return next;
+        });
+      }
+
+      return result;
+    },
+    [roster, departures, submitted, since, today],
   );
 
   /**
@@ -704,6 +787,7 @@ export function useTimesheets(): Timesheets {
     entryFor,
     syncDay,
     updateEntry,
+    importTimings,
     isSubmitted,
     submitDate,
     reopenDate,

@@ -1042,6 +1042,338 @@ test("a time that is not a time is refused, not rounded into one", () => {
 });
 
 // -----------------------------------------------------------------------------
+// How long a spell away runs.
+//
+// The Status tab shows a From and a To, and somebody deciding whether a section
+// can spare a person was counting the days off those two dates in their head.
+// Both ends are days off work, so the count includes both — the off-by-one here
+// is the difference between approving five days and approving four.
+// -----------------------------------------------------------------------------
+const { daysInclusive } = await import("../src/lib/attendance/calculations.ts");
+const { departureDays } = await import("../src/lib/attendance/staff.ts");
+
+console.log("\nDays away");
+
+test("a range counts both of its ends", () => {
+  assert.equal(daysInclusive("2026-09-07", "2026-09-11"), 5, "Monday to Friday");
+  assert.equal(daysInclusive("2026-09-07", "2026-09-07"), 1, "one day off");
+  assert.equal(daysInclusive("2026-09-01", "2026-09-30"), 30, "a whole month");
+});
+
+test("a range across a year end is counted straight through", () => {
+  assert.equal(daysInclusive("2026-12-28", "2027-01-03"), 7);
+  assert.equal(daysInclusive("2024-02-27", "2024-03-01"), 4, "2024 is a leap year");
+});
+
+test("a vacation reports its length, and an open spell reports none", () => {
+  const dep = (over) => ({ id: "d1", employeeId: "T1", ...over });
+  assert.equal(
+    departureDays(dep({ type: "vacation", from: "2026-09-07", to: "2026-09-20" })),
+    14,
+  );
+  assert.equal(departureDays(dep({ type: "sick", from: "2026-09-07" })), null, "open-ended");
+  assert.equal(departureDays(dep({ type: "exit", from: "2026-09-07" })), null, "one-way");
+});
+
+// -----------------------------------------------------------------------------
+// The timesheet import.
+//
+// A day's clock times arrive on a gate register, not on this screen, and
+// retyping forty rows of them is both slow and where the typos come from. The
+// cases below are the ones that actually arrive: whatever Excel did to the time
+// column, a partial file covering one shift, and — the one the plant asked for
+// by name — a register printed before somebody's vacation was booked.
+// -----------------------------------------------------------------------------
+const {
+  breaksToCell,
+  parseBreaksCell,
+  parseTimesheetCsv,
+  readTime,
+  resolveTimings,
+  timesheetCsv,
+} = await import("../src/lib/attendance/timesheetCsv.ts");
+
+console.log("\nTimesheet import");
+
+const PERSON = {
+  id: "E001",
+  name: "EXAMPLE NAME",
+  department: "CEMENT PLANT",
+  position: "OPERATOR",
+};
+const DAY = "2026-09-03";
+
+/** The plant's own records, as the resolver asks about them. */
+const records = (over = {}) => ({
+  known: (id) => id === "E001" || id === "E002",
+  employedOn: () => true,
+  bookedStatus: () => null,
+  isSubmitted: () => false,
+  earliest: "2026-03-01",
+  today: "2026-09-05",
+  ...over,
+});
+
+/** Parse a file and check it against the records — what the screen does. */
+const importFile = (text, over = {}) => {
+  const { rows, errors } = parseTimesheetCsv(text);
+  const result = resolveTimings(rows, records(over));
+  return { ...result, errors: [...errors, ...result.errors] };
+};
+
+const fileOf = (...lines) =>
+  [
+    "Emp ID,Name,Date (dd/mm/yyyy),Start,Breaks,End,Status,Remarks",
+    ...lines,
+  ].join("\r\n");
+
+test("the downloaded day is itself a valid import file", () => {
+  const csv = timesheetCsv(DAY, [
+    {
+      employee: PERSON,
+      entry: {
+        employeeId: "E001",
+        date: DAY,
+        status: "present",
+        start: "07:00",
+        end: "16:00",
+        breaks: [LUNCH],
+        remarks: "OK",
+      },
+    },
+  ]);
+  const { rows, errors } = parseTimesheetCsv(csv);
+  assert.deepEqual(errors, []);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].employeeId, "E001");
+  assert.equal(rows[0].date, DAY);
+  assert.equal(rows[0].start, "07:00");
+  assert.equal(rows[0].end, "16:00");
+  assert.deepEqual(rows[0].breaks, [LUNCH]);
+  assert.equal(rows[0].status, "present");
+  assert.equal(rows[0].remarks, "OK");
+});
+
+test("a day nobody has filled in yet comes down empty, not as zeros", () => {
+  const csv = timesheetCsv(DAY, [{ employee: PERSON, entry: undefined }]);
+  const { rows, errors } = parseTimesheetCsv(csv);
+  assert.deepEqual(errors, []);
+  assert.equal(rows[0].start, undefined);
+  assert.equal(rows[0].end, undefined);
+  assert.equal(rows[0].breaks, null, "blank means leave the gaps alone");
+});
+
+test("whatever the spreadsheet did to the time column is still read", () => {
+  assert.equal(readTime("07:00"), "07:00");
+  assert.equal(readTime("7:00:00"), "07:00", "Excel adds seconds");
+  assert.equal(readTime("7:00 AM"), "07:00", "and an AM/PM in a US locale");
+  assert.equal(readTime("4:30 pm"), "16:30");
+  assert.equal(readTime("12:15 AM"), "00:15", "midnight is 12 AM");
+  assert.equal(readTime("12:15 PM"), "12:15", "and noon is 12 PM");
+  assert.equal(readTime("0700"), "07:00", "the keypad form");
+  assert.equal(readTime("7"), "07:00");
+  assert.equal(readTime("07.30"), "07:30");
+});
+
+test("a cell that is not a time is refused, not rounded into one", () => {
+  assert.equal(readTime(""), null);
+  assert.equal(readTime("2500"), null);
+  assert.equal(readTime("07:60"), null);
+  assert.equal(readTime("morning"), null);
+});
+
+test("the gaps round-trip through one cell, reasons and all", () => {
+  const gaps = [LUNCH, { from: "14:30", to: "16:00", reason: "RAIN" }];
+  assert.equal(breaksToCell(gaps), "12:00-13:00 LUNCH; 14:30-16:00 RAIN");
+  assert.deepEqual(parseBreaksCell(breaksToCell(gaps)).breaks, gaps);
+  assert.deepEqual(parseBreaksCell("").breaks, []);
+});
+
+test("a gap with no reason is a gap, and one that will not read is an error", () => {
+  assert.deepEqual(parseBreaksCell("12:00-13:00").breaks, [
+    { from: "12:00", to: "13:00" },
+  ]);
+  assert.deepEqual(
+    parseBreaksCell("12:00 – 13:00").breaks,
+    [{ from: "12:00", to: "13:00" }],
+    "an autocorrected dash",
+  );
+  assert.ok("error" in parseBreaksCell("12:00"), "one time is not a pair");
+  assert.ok("error" in parseBreaksCell("lunchtime-later"));
+});
+
+test("a filled file becomes the changes it asks for", () => {
+  const { changes, errors, skipped, dates } = importFile(
+    fileOf("E001,EXAMPLE NAME,03/09/2026,0700,12:00-13:00 LUNCH,1600,Present,OK"),
+  );
+  assert.deepEqual(errors, []);
+  assert.equal(skipped, 0);
+  assert.deepEqual(dates, [DAY]);
+  assert.deepEqual(changes, [
+    {
+      employeeId: "E001",
+      date: DAY,
+      start: "07:00",
+      end: "16:00",
+      breaks: [LUNCH],
+      remarks: "OK",
+    },
+  ]);
+});
+
+test("a blank cell changes nothing, so a morning-shift file leaves the rest alone", () => {
+  // The failure this prevents: a register covering the morning, imported at
+  // noon, wiping the End times already entered for the early finishers.
+  const { changes } = importFile(fileOf("E001,EXAMPLE NAME,03/09/2026,0700,,,,"));
+  assert.deepEqual(changes, [{ employeeId: "E001", date: DAY, start: "07:00" }]);
+  assert.ok(!("end" in changes[0]), "no End means leave the End alone");
+  assert.ok(!("breaks" in changes[0]), "and no Breaks means leave the gaps alone");
+});
+
+test("a row with nothing in it is a line nobody got to, not a day to blank", () => {
+  const { changes, skipped, errors } = importFile(
+    fileOf("E001,EXAMPLE NAME,03/09/2026,,,,,"),
+  );
+  assert.deepEqual(changes, []);
+  assert.deepEqual(errors, []);
+  assert.equal(skipped, 1);
+});
+
+test("hours for somebody booked on vacation are refused, not applied", () => {
+  // The one the plant asked for by name. A register printed before the vacation
+  // was booked must not be able to overwrite it.
+  const { changes, errors } = importFile(
+    fileOf("E001,EXAMPLE NAME,03/09/2026,0700,,1600,,"),
+    { bookedStatus: () => "vacation" },
+  );
+  assert.deepEqual(changes, [], "nothing was written");
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /booked as Vacation/);
+  assert.match(errors[0], /Employees → Status/, "and it says where to change it");
+});
+
+test("somebody on vacation may be in the file as Vacation, or left out of it", () => {
+  const named = importFile(fileOf("E001,EXAMPLE NAME,03/09/2026,,,,Vacation,"), {
+    bookedStatus: () => "vacation",
+  });
+  assert.deepEqual(named.errors, []);
+  assert.deepEqual(named.changes, []);
+  assert.equal(named.skipped, 1, "the row already says what the records say");
+
+  const omitted = importFile(fileOf("E002,SOMEBODY ELSE,03/09/2026,0700,,1600,,"));
+  assert.deepEqual(omitted.errors, [], "the person away is simply not in the file");
+  assert.equal(omitted.changes.length, 1);
+});
+
+test("a file calling a day Sick when nothing is booked is refused", () => {
+  // Status on the timesheet is derived, not typed, and a file must not be the
+  // back door into setting what the screen will not let anybody set.
+  const { changes, errors } = importFile(
+    fileOf("E001,EXAMPLE NAME,03/09/2026,,,,Sick,"),
+  );
+  assert.deepEqual(changes, []);
+  assert.match(errors[0], /nothing is booked/);
+});
+
+test("a file naming the wrong kind of absence is refused, not reconciled", () => {
+  const { changes, errors } = importFile(
+    fileOf("E001,EXAMPLE NAME,03/09/2026,,,,Sick,"),
+    { bookedStatus: () => "vacation" },
+  );
+  assert.deepEqual(changes, []);
+  assert.match(errors[0], /says Sick .* but a Vacation is booked/);
+});
+
+test("a completed day is a record, and importing does not reopen it", () => {
+  const { changes, errors } = importFile(
+    fileOf("E001,EXAMPLE NAME,03/09/2026,0700,,1600,,"),
+    { isSubmitted: () => true },
+  );
+  assert.deepEqual(changes, []);
+  assert.match(errors[0], /completed and locked/);
+});
+
+test("dates outside what the sheets hold are refused", () => {
+  const future = importFile(fileOf("E001,EXAMPLE NAME,03/10/2026,0700,,1600,,"));
+  assert.match(future.errors[0], /has not happened yet/);
+
+  const ancient = importFile(fileOf("E001,EXAMPLE NAME,03/01/2026,0700,,1600,,"));
+  assert.match(ancient.errors[0], /older than the six months/);
+});
+
+test("a staff number the plant does not have stops its own row and no other", () => {
+  const { changes, errors } = importFile(
+    fileOf(
+      "E999,NOBODY,03/09/2026,0700,,1600,,",
+      "E001,EXAMPLE NAME,03/09/2026,0700,,1600,,",
+    ),
+  );
+  assert.equal(changes.length, 1, "the good row still went in");
+  assert.equal(changes[0].employeeId, "E001");
+  assert.match(errors[0], /not on the staff list/);
+});
+
+test("somebody who had already left on that date is refused", () => {
+  const { changes, errors } = importFile(
+    fileOf("E001,EXAMPLE NAME,03/09/2026,0700,,1600,,"),
+    { employedOn: () => false },
+  );
+  assert.deepEqual(changes, []);
+  assert.match(errors[0], /had already left/);
+});
+
+test("one person twice on one day is reported rather than silently last-wins", () => {
+  const { changes, errors } = importFile(
+    fileOf(
+      "E001,EXAMPLE NAME,03/09/2026,0700,,1600,,",
+      "E001,EXAMPLE NAME,03/09/2026,0800,,1700,,",
+    ),
+  );
+  assert.equal(changes.length, 1);
+  assert.equal(changes[0].start, "07:00", "the first one stands");
+  assert.match(errors[0], /appears twice/);
+});
+
+test("columns are matched by name, so reordering and extras are fine", () => {
+  const { changes, errors } = importFile(
+    [
+      "Section,Date,Emp ID,End,Start,Name",
+      "CEMENT PLANT,03/09/2026,E001,1600,0700,EXAMPLE NAME",
+    ].join("\r\n"),
+  );
+  assert.deepEqual(errors, []);
+  assert.deepEqual(changes, [
+    { employeeId: "E001", date: DAY, start: "07:00", end: "16:00" },
+  ]);
+});
+
+test("a spreadsheet that reformatted the date column is still read", () => {
+  const { changes, errors } = importFile(
+    fileOf("E001,EXAMPLE NAME,2026-09-03,0700,,1600,,"),
+  );
+  assert.deepEqual(errors, []);
+  assert.equal(changes[0].date, DAY);
+});
+
+test("an unreadable line is reported and the rest of the file still loads", () => {
+  const { changes, errors } = importFile(
+    fileOf(
+      "E001,EXAMPLE NAME,03/09/2026,elevenish,,1600,,",
+      "E002,SOMEBODY ELSE,03/09/2026,0700,,1600,,",
+    ),
+  );
+  assert.equal(changes.length, 1);
+  assert.equal(changes[0].employeeId, "E002");
+  assert.match(errors[0], /start "elevenish" is not a time/);
+});
+
+test("a file with no Emp ID or Date column says so rather than importing nothing", () => {
+  const { errors } = importFile("Name,Start,End\r\nEXAMPLE NAME,0700,1600");
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /No "Emp ID" or "Date" column found/);
+});
+
+// -----------------------------------------------------------------------------
 console.log(`\n${passed} passed, ${failures.length} failed\n`);
 if (failures.length) {
   for (const f of failures) console.error(`  ${f.name}\n    ${f.message}\n`);

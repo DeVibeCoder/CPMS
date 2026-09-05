@@ -50,11 +50,15 @@ import { DEFAULT_SECTION } from "@/lib/attendance/sections";
 import { awayOn, exitOf, isBooked, isLeaving, upper } from "@/lib/attendance/staff";
 import { toast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/useMediaQuery";
-import { useAuth } from "@/store/auth";
 import { DEPARTURE_LABELS, type Employee } from "@/types/attendance";
 import type { Timesheets } from "./useTimesheets";
 import { HistoryTab, StatusTab } from "./StatusTab";
-import { PresenceBadge, departureTint } from "./shared";
+import {
+  PresenceBadge,
+  departureTint,
+  useCanManageAttendance,
+  useCanManageStaffList,
+} from "./shared";
 
 interface ImportResult {
   added: number;
@@ -115,10 +119,11 @@ function StaffList({ sheets }: { sheets: Timesheets }) {
   const [confirmClear, setConfirmClear] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // The whole page is administrator-only today, but editing and deleting a
-  // person is a different thing from reading the list, so it asks separately —
-  // if Attendance is ever opened up, these stay shut.
-  const isAdmin = useAuth((s) => s.user?.role === "admin");
+  // Two separate questions, and the one place attendance's two roles differ.
+  // Anyone who runs attendance may add somebody and correct or remove a row;
+  // only an administrator may import a file over the whole list or empty it.
+  const isAdmin = useCanManageAttendance();
+  const canReplaceList = useCanManageStaffList();
   const isMobile = useIsMobile();
 
   const source = sheets.employees;
@@ -234,20 +239,22 @@ function StaffList({ sheets }: { sheets: Timesheets }) {
             Add staff
           </Button>
 
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".csv,text/csv"
-            className="hidden"
-            onChange={(e) => onImport(e.target.files?.[0])}
-          />
+          {canReplaceList && (
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(e) => onImport(e.target.files?.[0])}
+            />
+          )}
 
           {[
             {
               label: "Template",
               icon: FileDown,
               onClick: onDownloadTemplate,
-              show: true,
+              show: canReplaceList,
               disabled: false,
               danger: false,
             },
@@ -255,10 +262,13 @@ function StaffList({ sheets }: { sheets: Timesheets }) {
               label: importing ? "Importing…" : "Import",
               icon: importing ? Loader2 : Upload,
               onClick: () => fileRef.current?.click(),
-              show: true,
+              show: canReplaceList,
               disabled: importing,
               danger: false,
             },
+            // Export stays for everybody. Reading the list out is not changing
+            // it, and a supervisor who needs the staff list on paper should not
+            // have to ask an administrator for it.
             {
               label: "Export",
               icon: Download,
@@ -271,7 +281,7 @@ function StaffList({ sheets }: { sheets: Timesheets }) {
               label: "Remove all",
               icon: Trash2,
               onClick: () => setConfirmClear(true),
-              show: isAdmin,
+              show: canReplaceList,
               disabled: sheets.employees.length + sheets.inactive.length === 0,
               danger: true,
             },
@@ -320,7 +330,10 @@ function StaffList({ sheets }: { sheets: Timesheets }) {
           {rows.length === 0 && (
             <Card>
               <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                <EmptyMessage filtered={source.length > 0} />
+                <EmptyMessage
+                  filtered={source.length > 0}
+                  canImport={canReplaceList}
+                />
               </CardContent>
             </Card>
           )}
@@ -355,7 +368,10 @@ function StaffList({ sheets }: { sheets: Timesheets }) {
                       colSpan={isAdmin ? 6 : 5}
                       className="py-10 text-center text-sm text-muted-foreground"
                     >
-                      <EmptyMessage filtered={source.length > 0} />
+                      <EmptyMessage
+                  filtered={source.length > 0}
+                  canImport={canReplaceList}
+                />
                     </TableCell>
                   </TableRow>
                 )}
@@ -698,8 +714,29 @@ function RowNote({
   return null;
 }
 
-function EmptyMessage({ filtered }: { filtered: boolean }) {
+/**
+ * What an empty list says.
+ *
+ * It names the way out, so it has to name one this account actually has: an
+ * account without the bulk tools being told to use Template and Import is being
+ * sent to two buttons that are not on its screen.
+ */
+function EmptyMessage({
+  filtered,
+  canImport,
+}: {
+  filtered: boolean;
+  canImport: boolean;
+}) {
   if (filtered) return <>No employees match that search.</>;
+  if (!canImport) {
+    return (
+      <>
+        No staff yet. Use <span className="font-medium">Add staff</span> to take
+        somebody on. A whole list is loaded by an administrator.
+      </>
+    );
+  }
   return (
     <>
       No staff yet. Use <span className="font-medium">Add staff</span> for one

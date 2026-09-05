@@ -67,6 +67,22 @@ export function addDays(iso: string, days: number): string {
 }
 
 /**
+ * How many days a range covers, counting both ends.
+ *
+ * Inclusive because that is what a spell away means to the person taking it:
+ * somebody off from Monday to Friday is off for five days, not four. The same
+ * arithmetic done exclusively is the reason a week's vacation gets approved as
+ * six days somewhere and reported as five somewhere else.
+ *
+ * Both dates are parsed in UTC, so no daylight-saving change can make a range
+ * come out a day short.
+ */
+export function daysInclusive(from: string, to: string): number {
+  const span = parseISODate(to).getTime() - parseISODate(from).getTime();
+  return Math.floor(span / 86_400_000) + 1;
+}
+
+/**
  * A date the way the plant writes it: 25/12/2026.
  *
  * ISO is what gets stored, sorted and compared — it is the only form that does

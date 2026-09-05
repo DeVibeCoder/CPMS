@@ -28,8 +28,9 @@ export const NAV_ITEMS: NavItem[] = [
   // is a tab bar across the top of the section — not a sidebar dropdown.
   { label: "Inventory", to: "/inventory", icon: Boxes, section: "Inventory" },
   { label: "Analytics", to: "/analytics", icon: BarChart3, section: "Reports" },
-  // Administrator-only: working hours are staff records, and the plant asked
-  // that they stay with the people who already hold that responsibility.
+  // Administrators and dispatch. Working hours are staff records, and dispatch
+  // is who is at the plant when a shift starts — see the capability map in
+  // `store/auth.ts`. Viewers do not see it at all.
   {
     label: "Attendance",
     to: "/attendance",

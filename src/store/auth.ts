@@ -29,10 +29,16 @@ export const PERMISSIONS = {
     createReports: true,
     editReports: true,
     exportPdf: true,
-    // Working hours are staff records. Administrator-only by the plant's own
-    // decision, and the row-level security on the attendance tables says the
-    // same thing where a REST client cannot get round it.
+    // Working hours are staff records, and the plant has put them in the hands
+    // of dispatch as well as administrators — dispatch is who is at the plant
+    // when the shift starts, and a sheet only they can see somebody fill in is
+    // a sheet filled in a day late. The row-level security on the attendance
+    // tables names both roles too, where a REST client cannot get round it.
     attendance: true,
+    // Replacing the staff list wholesale — importing over it, or clearing it —
+    // is a different act from running attendance day to day, and the plant
+    // keeps it with administrators.
+    manageStaffList: true,
   },
   // Can create, edit and generate (print/export) reports — but not delete,
   // manage users, or change settings.
@@ -44,7 +50,22 @@ export const PERMISSIONS = {
     createReports: true,
     editReports: true,
     exportPdf: true,
-    attendance: false,
+    // The whole module, not a read-only corner of it: dispatch adds staff,
+    // books departures, fills in the timesheet, completes the day and assigns
+    // posts on the chart. Splitting the day-to-day work finer would mean a
+    // supervisor who could enter a vacation but not the hours it displaces.
+    attendance: true,
+    // The one exception, at the plant's request. Dispatch adds and corrects
+    // people one at a time; the bulk tools that overwrite or empty the whole
+    // staff list are not offered to them, because a mistake with those is not
+    // a mistake in one row.
+    //
+    // A guard on the screen rather than in the database, deliberately: dispatch
+    // may already add, correct and remove people one by one, so row-level
+    // security has no line left to draw here that the per-row actions do not
+    // already cross. What this prevents is the whole plant going in one click,
+    // which is a foot-gun rather than a privilege.
+    manageStaffList: false,
   },
   // Read-only. Can view everything but change nothing.
   viewer: {
@@ -56,6 +77,7 @@ export const PERMISSIONS = {
     editReports: false,
     exportPdf: false,
     attendance: false,
+    manageStaffList: false,
   },
 } as const;
 

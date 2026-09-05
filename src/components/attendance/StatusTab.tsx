@@ -32,7 +32,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/useMediaQuery";
 import { formatDayMonthYear } from "@/lib/attendance/calculations";
-import { hasExited } from "@/lib/attendance/staff";
+import { departureDays, hasExited } from "@/lib/attendance/staff";
 import {
   DEPARTURE_LABELS,
   DEPARTURE_TYPES,
@@ -200,7 +200,7 @@ function DepartureList({
       );
   }, [departures, people, query, type, month, readOnly]);
 
-  const columns = readOnly ? 5 : 6;
+  const columns = readOnly ? 6 : 7;
 
   return (
     <div className="space-y-3">
@@ -274,6 +274,11 @@ function DepartureList({
                       ? ` – ${formatDayMonthYear(d.to)}`
                       : ""}
                   </div>
+                  {/* The length gets its own line here rather than being tacked
+                      onto the dates. It is the thing being looked up, and on a
+                      phone anything appended to that line is what gets
+                      truncated away. */}
+                  <DayCount departure={d} className="text-[11px] leading-tight" />
                 </div>
 
                 <div className="flex shrink-0 items-center gap-1.5">
@@ -313,6 +318,12 @@ function DepartureList({
                   <TableHead className="w-[140px]">Type</TableHead>
                   <TableHead className="w-[130px]">From</TableHead>
                   <TableHead className="w-[130px]">To</TableHead>
+                  {/* How long it runs, worked out rather than typed. From and
+                      To answer when; a supervisor deciding whether the section
+                      can spare somebody is asking how many, and counting it off
+                      two dates in their head is where a five-day vacation
+                      becomes a four-day one. */}
+                  <TableHead className="w-[86px] text-right">Days</TableHead>
                   {!readOnly && <TableHead className="w-[60px]" />}
                 </TableRow>
               </TableHeader>
@@ -339,6 +350,9 @@ function DepartureList({
                           dash — the same as any other column with nothing in
                           it, rather than a sentence explaining itself. */}
                       {d.type === "exit" || !d.to ? "—" : formatDayMonthYear(d.to)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      <DaysAway departure={d} />
                     </TableCell>
                     {!readOnly && (
                       <TableCell>
@@ -371,6 +385,49 @@ function DepartureList({
           </CardContent>
         </Card>
       )}
+    </div>
+  );
+}
+
+/**
+ * How many days a spell away runs for.
+ *
+ * An open-ended spell and an exit have no length to state, and both say so with
+ * the same dash every other empty cell uses. "Open" was tried in the column and
+ * read as a status rather than as a missing number.
+ */
+function DaysAway({ departure }: { departure: Departure }) {
+  const days = departureDays(departure);
+  if (days === null) return <span className="text-muted-foreground">—</span>;
+  return (
+    <span className="font-medium">
+      {days} <span className="font-normal text-muted-foreground">
+        {days === 1 ? "day" : "days"}
+      </span>
+    </span>
+  );
+}
+
+/** The same figure written out, for the phone card where there is no column. */
+function DayCount({
+  departure,
+  className,
+}: {
+  departure: Departure;
+  className?: string;
+}) {
+  const days = departureDays(departure);
+  if (days === null) {
+    // An exit needs no explanation; an open spell does, because a blank line
+    // there would read as a length nobody has filled in.
+    if (departure.type === "exit") return null;
+    return (
+      <div className={cn("text-muted-foreground", className)}>Open-ended</div>
+    );
+  }
+  return (
+    <div className={cn("font-medium tabular-nums", className)}>
+      {days} {days === 1 ? "day" : "days"}
     </div>
   );
 }

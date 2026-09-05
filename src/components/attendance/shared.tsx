@@ -2,6 +2,7 @@ import type { ComponentProps } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { can, useAuth } from "@/store/auth";
 import {
   DEPARTURE_LABELS,
   PRESENCE_LABELS,
@@ -9,6 +10,38 @@ import {
   type DepartureType,
   type PresenceStatus,
 } from "@/types/attendance";
+
+/**
+ * Whether this account may change what Attendance holds.
+ *
+ * The one capability covers the whole module — adding staff, booking a
+ * departure, filling in a day, completing it, moving somebody on the chart. A
+ * finer split was tried and is not the shape of the job: a supervisor who could
+ * record a vacation but not the hours it displaces would have to hand half of
+ * one action to somebody else.
+ *
+ * It is asked rather than assumed because the route guard and this are not the
+ * same question today only by coincidence — everyone who can open the page can
+ * currently edit it. If a read-only role is ever let in, this is the line that
+ * already knows what to do about it.
+ */
+export function useCanManageAttendance(): boolean {
+  return useAuth((s) => can(s.user?.role, "attendance"));
+}
+
+/**
+ * Whether this account may replace the staff list as a whole.
+ *
+ * Narrower than `useCanManageAttendance`, and the one place the two part
+ * company. Adding somebody, correcting them and removing a row entered by
+ * mistake are day-to-day work and belong to whoever runs attendance. Importing a
+ * file over the whole list, or emptying it, is not day-to-day work — it happens
+ * once, it takes every departure, timesheet row and chart post with it, and the
+ * plant keeps it with administrators.
+ */
+export function useCanManageStaffList(): boolean {
+  return useAuth((s) => can(s.user?.role, "manageStaffList"));
+}
 
 /** One figure in a summary strip. Compact — several sit side by side. */
 export function StatTile({

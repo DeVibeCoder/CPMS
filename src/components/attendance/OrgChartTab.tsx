@@ -19,7 +19,6 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
-import { useAuth } from "@/store/auth";
 import {
   ALL_SLOTS,
   CAPACITY,
@@ -45,6 +44,7 @@ import { awayOn, hasExited, isLeaving } from "@/lib/attendance/staff";
 import type { Employee } from "@/types/attendance";
 import type { Timesheets } from "./useTimesheets";
 import { EmployeePicker } from "./StatusTab";
+import { useCanManageAttendance } from "./shared";
 
 /**
  * How a post reads once you know who is in it.
@@ -212,7 +212,7 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
   /** A print or a download is being built. Neither may run twice at once. */
   const [busy, setBusy] = useState(false);
 
-  const isAdmin = useAuth((s) => s.user?.role === "admin");
+  const isAdmin = useCanManageAttendance();
 
   const byId = useMemo(
     () => new Map(sheets.roster.map((e) => [e.id, e])),
@@ -591,7 +591,7 @@ export function OrgChartTab({ sheets }: { sheets: Timesheets }) {
         <p className="order-2 w-full text-sm text-muted-foreground sm:order-none sm:w-auto sm:flex-1">
           {isAdmin
             ? "Click any box to put somebody in that post. Posts are fixed; who fills them is not."
-            : "Posts and who fills them. Only an administrator can change assignments."}{" "}
+            : "Posts and who fills them. Your account cannot change assignments."}{" "}
           Print and Download both give one Letter page, landscape.
         </p>
         {/* On a phone the buttons come first and the explanation underneath:
