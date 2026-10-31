@@ -8,14 +8,20 @@ import type { Report, Shipment } from "@/types";
  *     Current Balance = Opening Balance + New Shipment − Production
  *     next day's Opening Balance = this day's Current Balance
  *
- * Two sources feed it. Production comes from **finalised** reports, so the
- * figures here can never disagree with the reports they came from. Shipments
+ * Two sources feed it. Production comes from **finalised** reports. Shipments
  * come from the shipments ledger, which is independent of the reporting cycle —
  * cement received today shows on the card today, whether or not that day's
  * report has been written.
  *
- * Only the very first opening balance is entered by hand. Everything after it is
- * derived, so nobody is asked to carry a balance forward manually.
+ * A finalised report's Current Stock is the signed-off balance and the figure
+ * the Dashboard and the PDF show, so the card closes on it instead of on its own
+ * sum. That stock is entered by hand, so it can disagree with the day's
+ * movements: the difference is kept on the row as `variance`, where it can be
+ * seen and explained, rather than folded into every later balance, where a
+ * single gap would keep the card apart from the reports for good.
+ *
+ * Only the very first opening balance is entered by hand here. Everything after
+ * it is carried forward, so nobody is asked to do that manually.
  *
  * Pure by design — records in, rows out, no I/O.
  */
@@ -27,6 +33,11 @@ export interface BinCardRow {
   newShipment: number;
   production: number;
   currentBalance: number;
+  /**
+   * Current Balance minus (Opening + New Shipment − Production). Zero when the
+   * day's movements explain its balance, or when no report has set one yet.
+   */
+  variance: number;
   /** Report this row's production came from, for the "view report" link. */
   reportId?: string;
   /** Shipment record backing this row's New Shipment, when there is one. */
@@ -48,6 +59,17 @@ export interface BinCardRow {
 /** Round to 2dp so a long chain of additions cannot accumulate float dust. */
 function round2(n: number): number {
   return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+/**
+ * Largest variance treated as rounding. Reports hold 2dp figures for stock
+ * measured to more places, so a day routinely lands 0.01 MT out.
+ */
+const VARIANCE_TOLERANCE = 0.02;
+
+/** True when a row's balance is not explained by its movements or by rounding. */
+export function hasVariance(row: BinCardRow): boolean {
+  return Math.abs(row.variance) > VARIANCE_TOLERANCE;
 }
 
 /** A report only moves stock once it has been finalised. */
@@ -81,6 +103,9 @@ export interface BinCardInput {
  * `silo.newShipment` written on its finalised report. Never both, so a figure
  * that was entered on a report before the shipments ledger existed is counted
  * exactly once.
+ *
+ * A date with a finalised report closes on that report's Current Stock. A report
+ * with no stock figure, and a date with only a shipment, close on the sum.
  */
 export function buildBinCard({
   reports,
@@ -116,7 +141,9 @@ export function buildBinCard({
     );
     const production = round2(report?.data.silo?.production ?? 0);
     const opening = carried;
-    const currentBalance = round2(opening + newShipment - production);
+    const expected = round2(opening + newShipment - production);
+    const reported = report?.data.silo?.currentStock ?? 0;
+    const currentBalance = reported > 0 ? round2(reported) : expected;
 
     rows.push({
       date,
@@ -124,6 +151,7 @@ export function buildBinCard({
       newShipment,
       production,
       currentBalance,
+      variance: round2(currentBalance - expected),
       reportId: report?.id,
       shipmentId: shipment?.id,
       legacyShipment,

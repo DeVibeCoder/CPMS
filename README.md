@@ -33,6 +33,7 @@ npm run preview          # preview the production build
 npm run typecheck        # type-check only
 npm run test:admin       # exercise api/admin-users against the project
 npm run test:attendance  # attendance calculations + sample data
+npm run test:bincard     # cement ledger, offline
 ```
 
 Without `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` the app shows a

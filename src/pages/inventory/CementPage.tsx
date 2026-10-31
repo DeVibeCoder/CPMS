@@ -46,7 +46,12 @@ import { repo } from "@/data";
 import { usePageMeta } from "@/store/pageMeta";
 import { useSettings } from "@/store/settings";
 import { useAuth, can } from "@/store/auth";
-import { buildBinCard, summariseBinCard } from "@/lib/binCard";
+import {
+  buildBinCard,
+  hasVariance,
+  summariseBinCard,
+  type BinCardRow,
+} from "@/lib/binCard";
 import { formatNumber } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import type { Report, Shipment } from "@/types";
@@ -59,8 +64,9 @@ import type { Report, Shipment } from "@/types";
  *     Current Balance = Opening Balance + New Shipment − Production
  *
  * Production comes from finalised reports. New Shipment comes from the
- * shipments ledger, logged here as it arrives. Each day's closing figure becomes
- * the next day's opening figure.
+ * shipments ledger, logged here as it arrives. A finalised report's Current
+ * Stock closes the day, and each day's closing figure becomes the next day's
+ * opening figure. Where the stock and the movements disagree the row says so.
  *
  * The one manual figure — the very first opening balance — is set in Settings,
  * not here. It is entered once at go-live by an administrator, so it does not
@@ -117,6 +123,57 @@ function Tile({
 
 const ALL_MONTHS = "all";
 
+/** Marks a row whose reported balance its movements do not explain. */
+function VarianceNote({ row }: { row: BinCardRow }) {
+  if (!hasVariance(row)) return null;
+  const sign = row.variance > 0 ? "+" : "−";
+  return (
+    <div
+      className="text-[11px] font-medium text-warning"
+      title="The report's Current Stock differs from Opening + New Shipment − Production by this much. The report's figure stands; check the entries for this date."
+    >
+      {sign}
+      {formatNumber(Math.abs(row.variance), { decimals: 2 })} unexplained
+    </div>
+  );
+}
+
+/**
+ * What the balance is, and what it is not. Worked out from the whole ledger, not
+ * the selected month: a date with an unexplained difference still matters when
+ * somebody is looking at a month without one.
+ */
+function BalanceNote({
+  rows,
+  balance,
+}: {
+  rows: BinCardRow[];
+  balance: number;
+}) {
+  const flagged = rows.filter(hasVariance).length;
+  // A shipment logged after the newest report closes on the sum, not on a report.
+  const reported = Boolean(rows[rows.length - 1]?.reportId);
+  return (
+    <p className="rounded-lg border border-warning/40 bg-warning/10 p-2.5 text-xs text-foreground">
+      <span className="font-semibold">
+        {reported ? "Reported closing stock" : "Calculated balance"}:{" "}
+        {formatNumber(balance, { decimals: 2 })} MT.
+      </span>{" "}
+      Physical stock has not been independently verified.
+      {flagged > 0 &&
+        ` An unresolved historical stock discrepancy remains under review: ${flagged} date${flagged === 1 ? "" : "s"} show an unexplained difference (see All months).`}
+    </p>
+  );
+}
+
+/** What changing a date's shipment does to the balances, for the messages. */
+function shipmentEffect(rows: BinCardRow[], date: string): string {
+  const closedByReport = rows.some((r) => r.date === date && r.reportId);
+  return closedByReport
+    ? "The final report for that date still sets its closing balance, so this can change that day's unexplained difference."
+    : "The balance changes from that date up to the next final report, which keeps its reported stock.";
+}
+
 export default function CementPage() {
   const navigate = useNavigate();
   const user = useAuth((s) => s.user);
@@ -127,6 +184,7 @@ export default function CementPage() {
   const settings = useSettings((s) => s.settings);
 
   const [reports, setReports] = useState<Report[] | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [shipments, setShipments] = useState<Shipment[]>([]);
 
   /** null until the user picks — resolved to the newest month at render. */
@@ -147,7 +205,9 @@ export default function CementPage() {
 
   const load = useCallback(async () => {
     const [loadedReports, loadedShipments] = await Promise.all([
-      repo.listReports().catch(() => [] as Report[]),
+      // No reports means no balance. An empty list here would show the opening
+      // balance as the cement in the silos, so a failure has to stay a failure.
+      repo.listReports().catch(() => null),
       // A database that predates the shipments table should still show its
       // ledger from the report figures rather than failing to render at all.
       repo.listShipments().catch((e: unknown) => {
@@ -159,6 +219,7 @@ export default function CementPage() {
         return [] as Shipment[];
       }),
     ]);
+    setLoadFailed(loadedReports === null);
     setReports(loadedReports);
     setShipments(loadedShipments);
   }, []);
@@ -270,7 +331,7 @@ export default function CementPage() {
       toast({
         variant: "success",
         title: existingShipment ? "Shipment updated" : "Shipment logged",
-        description: `${formatNumber(shipAmount, { decimals: 2 })} MT on ${format(parseISO(shipDate), "dd MMM yyyy")}. Balances have been carried forward.`,
+        description: `${formatNumber(shipAmount, { decimals: 2 })} MT on ${format(parseISO(shipDate), "dd MMM yyyy")}. ${shipmentEffect(rows, shipDate)}`,
       });
       setDialogOpen(false);
       // Show the month the shipment landed in, so it is not saved into a view
@@ -296,7 +357,7 @@ export default function CementPage() {
       toast({
         variant: "success",
         title: "Shipment removed",
-        description: "Later balances have been recalculated.",
+        description: shipmentEffect(rows, toRemove.date),
       });
       setToRemove(null);
       setDialogOpen(false);
@@ -311,6 +372,20 @@ export default function CementPage() {
       setRemoving(false);
     }
   };
+
+  if (loadFailed) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+        <p className="text-sm font-medium">The reports could not be loaded.</p>
+        <p className="text-xs text-muted-foreground">
+          The balance cannot be worked out without them.
+        </p>
+        <Button variant="outline" size="sm" onClick={() => void load()}>
+          Try again
+        </Button>
+      </div>
+    );
+  }
 
   if (!reports) {
     return (
@@ -402,6 +477,10 @@ export default function CementPage() {
           accent="violet"
         />
       </div>
+
+      {rows.length > 0 && (
+        <BalanceNote rows={rows} balance={summary.currentBalance} />
+      )}
 
       {/* Bin card. No title block above it — the page header already says what
           this is, and a second heading only pushed the rows down the screen. */}
@@ -511,6 +590,7 @@ export default function CementPage() {
                         </TableCell>
                         <TableCell className="text-right font-bold tabular-nums text-primary">
                           {formatNumber(r.currentBalance, { decimals: 2 })}
+                          <VarianceNote row={r} />
                         </TableCell>
                         <TableCell className="text-right">
                           {r.reportId && (
@@ -590,6 +670,9 @@ export default function CementPage() {
                         </div>
                       </div>
                     </div>
+                    <div className="mt-2 empty:hidden">
+                      <VarianceNote row={r} />
+                    </div>
                   </div>
                 ))}
                 {displayRows.length === 0 && (
@@ -604,8 +687,10 @@ export default function CementPage() {
       </Card>
 
       <p className="text-xs text-muted-foreground">
-        Current Balance = Opening Balance + New Shipment − Production. Each day's
-        Current Balance becomes the next day's Opening Balance. Shipments count
+        Current Balance = Opening Balance + New Shipment − Production. A final
+        report's Current Stock closes its day, and each day's Current Balance
+        becomes the next day's Opening Balance; an "unexplained" amount means
+        the report's stock and that day's movements disagree. Shipments count
         as soon as they are logged; production counts once its report is marked
         final — a draft has no settled figures to carry forward.
       </p>
@@ -619,7 +704,8 @@ export default function CementPage() {
             </DialogTitle>
             <DialogDescription>
               Cement received into the silos. It appears on the bin card as New
-              Shipment straight away and is carried into every later balance.
+              Shipment straight away. A final report's stock still closes its
+              day, so any difference shows there as unexplained.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -708,7 +794,7 @@ export default function CementPage() {
         title="Remove shipment?"
         description={
           toRemove
-            ? `The ${formatNumber(toRemove.amountMt, { decimals: 2 })} MT recorded on ${format(parseISO(toRemove.date), "dd MMM yyyy")} will be deleted and every balance after it recalculated. This cannot be undone.`
+            ? `The ${formatNumber(toRemove.amountMt, { decimals: 2 })} MT recorded on ${format(parseISO(toRemove.date), "dd MMM yyyy")} will be deleted. ${shipmentEffect(rows, toRemove.date)} This cannot be undone.`
             : ""
         }
         destructive
