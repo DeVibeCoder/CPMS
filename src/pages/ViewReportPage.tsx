@@ -12,21 +12,7 @@ import type { Report } from "@/types";
 import { downloadReportPdf, printReportPdf } from "@/lib/pdf";
 import { isLocked } from "@/lib/reportStatus";
 import { toast } from "@/hooks/use-toast";
-
-/** Inventory, with or without the month it was showing. */
-const INVENTORY_RETURN = /^\/inventory(\?month=(all|\d{4}-(0[1-9]|1[0-2])))?$/;
-
-/**
- * Where Back leads. A report opened from Inventory says so in its location state;
- * everything else, including a pasted link, belongs to Report History. The state
- * comes back out of browser history, so only a route this page knows is followed.
- */
-function returnPath(state: unknown): string {
-  const returnTo = (state as { returnTo?: unknown } | null)?.returnTo;
-  return typeof returnTo === "string" && INVENTORY_RETURN.test(returnTo)
-    ? returnTo
-    : "/reports";
-}
+import { returnPath } from "@/lib/reportReturn";
 
 export default function ViewReportPage() {
   const { id } = useParams();

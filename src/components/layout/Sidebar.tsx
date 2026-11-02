@@ -1,5 +1,6 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { NAV_ITEMS } from "@/config/nav";
+import { returnPath } from "@/lib/reportReturn";
 import { useAuth, can } from "@/store/auth";
 import { cn, roleLabel } from "@/lib/utils";
 import { Logo } from "@/components/common/Logo";
@@ -56,6 +57,12 @@ const ACTIVE = "bg-sidebar-accent text-white shadow-sm";
 
 export function SidebarNav({ collapsed = false, onNavigate }: SidebarProps) {
   const user = useAuth((s) => s.user);
+  const location = useLocation();
+  // A report always lives under /reports, but one opened from Inventory belongs
+  // to Inventory: it goes back there, so that is the section it shows as.
+  const fromInventory =
+    location.pathname.startsWith("/reports/") &&
+    returnPath(location.state) !== "/reports";
 
   const items = NAV_ITEMS.filter(
     (item) => !item.requires || can(user?.role, item.requires),
@@ -89,7 +96,14 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarProps) {
             <NavLink
               to={item.to}
               onClick={onNavigate}
-              className={({ isActive }) => cn(row, isActive ? ACTIVE : IDLE)}
+              className={({ isActive }) =>
+                cn(
+                  row,
+                  (fromInventory ? item.to === "/inventory" : isActive)
+                    ? ACTIVE
+                    : IDLE,
+                )
+              }
             >
               <IconBox>
                 <item.icon className="h-5 w-5" />
