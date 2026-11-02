@@ -31,7 +31,15 @@ export function MobileHeader({ focused }: { focused: boolean }) {
       <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/90 px-3 backdrop-blur">
         {focused ? (
           <button
-            onClick={() => navigate(-1)}
+            // A focused screen opened from a link has nothing behind it to go
+            // back to, and every focused screen is under Reports. The router
+            // numbers its history entries from 0 on a fresh load, and signing in
+            // replaces an entry rather than adding one, so idx covers that too.
+            onClick={() =>
+              window.history.state?.idx > 0
+                ? navigate(-1)
+                : navigate("/reports")
+            }
             aria-label="Back"
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-foreground active:bg-accent"
           >

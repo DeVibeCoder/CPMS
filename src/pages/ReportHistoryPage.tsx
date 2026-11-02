@@ -61,7 +61,7 @@ import {
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { repo } from "@/data";
 import { useAuth, can } from "@/store/auth";
-import { useReportFilters } from "@/store/reportFilters";
+import { type SortKey, useReportFilters } from "@/store/reportFilters";
 import type { Report } from "@/types";
 import { cn } from "@/lib/utils";
 import { downloadReportPdf, printReportPdf } from "@/lib/pdf";
@@ -76,7 +76,6 @@ import { downloadText } from "@/lib/csv";
 import { formatNumber } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 
-type SortKey = "date" | "createdByName" | "createdAt" | "updatedAt";
 const PAGE_SIZE = 10;
 
 const MONTHS = [
@@ -137,17 +136,20 @@ export default function ReportHistoryPage() {
   const canRevert = can(user?.role, "settings");
 
   const [reports, setReports] = useState<Report[] | null>(null);
-  const [query, setQuery] = useState("");
-  // The month/year selection lives in a store rather than in this component so
-  // it survives opening a report and coming back. ReportsScope bounds how long
-  // that lasts: leaving the section returns it to the current month.
+  // The filters, sort and page live in a store rather than in this component so
+  // they survive opening a report and coming back. ReportsScope bounds how long
+  // that lasts: leaving the section returns them to the current month.
   const month = useReportFilters((s) => s.month);
   const year = useReportFilters((s) => s.year);
   const setMonth = useReportFilters((s) => s.setMonth);
   const setYear = useReportFilters((s) => s.setYear);
-  const [sortKey, setSortKey] = useState<SortKey>("date");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const [page, setPage] = useState(1);
+  const query = useReportFilters((s) => s.query);
+  const setQuery = useReportFilters((s) => s.setQuery);
+  const sortKey = useReportFilters((s) => s.sortKey);
+  const sortDir = useReportFilters((s) => s.sortDir);
+  const setSort = useReportFilters((s) => s.setSort);
+  const page = useReportFilters((s) => s.page);
+  const setPage = useReportFilters((s) => s.setPage);
   const [toDelete, setToDelete] = useState<Report | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -214,11 +216,8 @@ export default function ReportHistoryPage() {
     : filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   const toggleSort = (key: SortKey) => {
-    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else {
-      setSortKey(key);
-      setSortDir("desc");
-    }
+    if (sortKey === key) setSort(key, sortDir === "asc" ? "desc" : "asc");
+    else setSort(key, "desc");
   };
 
   const resetPage = () => setPage(1);
@@ -877,7 +876,7 @@ export default function ReportHistoryPage() {
                   variant="outline"
                   size="sm"
                   disabled={safePage === 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  onClick={() => setPage(Math.max(1, safePage - 1))}
                 >
                   Previous
                 </Button>
@@ -885,7 +884,7 @@ export default function ReportHistoryPage() {
                   variant="outline"
                   size="sm"
                   disabled={safePage === totalPages}
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  onClick={() => setPage(Math.min(totalPages, safePage + 1))}
                 >
                   Next
                 </Button>

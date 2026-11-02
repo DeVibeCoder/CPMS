@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { format, parseISO } from "date-fns";
 import { ArrowLeft, Download, Loader2, Lock, Pencil, Printer } from "lucide-react";
 import { usePageMeta } from "@/store/pageMeta";
@@ -13,9 +13,26 @@ import { downloadReportPdf, printReportPdf } from "@/lib/pdf";
 import { isLocked } from "@/lib/reportStatus";
 import { toast } from "@/hooks/use-toast";
 
+/** Inventory, with or without the month it was showing. */
+const INVENTORY_RETURN = /^\/inventory(\?month=(all|\d{4}-(0[1-9]|1[0-2])))?$/;
+
+/**
+ * Where Back leads. A report opened from Inventory says so in its location state;
+ * everything else, including a pasted link, belongs to Report History. The state
+ * comes back out of browser history, so only a route this page knows is followed.
+ */
+function returnPath(state: unknown): string {
+  const returnTo = (state as { returnTo?: unknown } | null)?.returnTo;
+  return typeof returnTo === "string" && INVENTORY_RETURN.test(returnTo)
+    ? returnTo
+    : "/reports";
+}
+
 export default function ViewReportPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const backTo = returnPath(location.state);
   const role = useAuth((s) => s.user?.role);
   const canEdit = can(role, "editReports");
   const canExport = can(role, "exportPdf");
@@ -32,16 +49,26 @@ export default function ViewReportPage() {
   useEffect(() => {
     if (!id) return;
     setLoading(true);
-    repo.getReport(id).then((r) => {
-      if (!r) {
-        toast({ variant: "destructive", title: "Report not found." });
-        navigate("/reports");
-        return;
-      }
-      setReport(r);
-      setLoading(false);
-    });
-  }, [id, navigate]);
+    repo
+      .getReport(id)
+      .then((r) => {
+        if (!r) {
+          toast({ variant: "destructive", title: "Report not found." });
+          navigate(backTo, { replace: true });
+          return;
+        }
+        setReport(r);
+        setLoading(false);
+      })
+      .catch((e: unknown) => {
+        toast({
+          variant: "destructive",
+          title: "Could not load the report",
+          description: e instanceof Error ? e.message : undefined,
+        });
+        navigate(backTo, { replace: true });
+      });
+  }, [id, navigate, backTo]);
 
   if (loading || !report) {
     return (
@@ -55,7 +82,7 @@ export default function ViewReportPage() {
     <div className="pb-20 md:pb-0">
       {/* Actions toolbar */}
       <div className="no-print mb-5 flex flex-wrap items-center gap-2">
-        <Button variant="outline" onClick={() => navigate("/reports")}>
+        <Button variant="outline" onClick={() => navigate(backTo)}>
           <ArrowLeft className="h-4 w-4" />
           Back
         </Button>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { format, parseISO } from "date-fns";
 import {
   ArrowUpFromLine,
@@ -187,8 +187,15 @@ export default function CementPage() {
   const [loadFailed, setLoadFailed] = useState(false);
   const [shipments, setShipments] = useState<Shipment[]>([]);
 
-  /** null until the user picks — resolved to the newest month at render. */
-  const [month, setMonth] = useState<string | null>(null);
+  /**
+   * null until the user picks — resolved to the newest month at render. It lives
+   * in the URL so that every way back from a report finds it again: the Back
+   * button, the phone's header arrow and the browser's own.
+   */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const month = searchParams.get("month");
+  const setMonth = (m: string) =>
+    setSearchParams({ month: m }, { replace: true });
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [shipDate, setShipDate] = useState("");
@@ -264,6 +271,15 @@ export default function CementPage() {
     month && (month === ALL_MONTHS || months.includes(month))
       ? month
       : (months[0] ?? ALL_MONTHS);
+
+  /**
+   * Opens in the shared report view, which brings the user back here. It sends
+   * the resolved month, not the URL's, which a hand-edited link can leave invalid.
+   */
+  const openReport = (id: string) =>
+    navigate(`/reports/${id}`, {
+      state: { returnTo: `/inventory?month=${activeMonth}` },
+    });
 
   /**
    * Newest date first, to match Report History.
@@ -599,7 +615,7 @@ export default function CementPage() {
                               size="icon"
                               className="h-8 w-8"
                               title="View report"
-                              onClick={() => navigate(`/reports/${r.reportId}`)}
+                              onClick={() => r.reportId && openReport(r.reportId)}
                             >
                               <FileText className="h-4 w-4" />
                             </Button>
@@ -630,9 +646,7 @@ export default function CementPage() {
                   >
                     <button
                       className="flex w-full items-center justify-between text-left"
-                      onClick={() =>
-                        r.reportId && navigate(`/reports/${r.reportId}`)
-                      }
+                      onClick={() => r.reportId && openReport(r.reportId)}
                     >
                       <span className="text-base font-semibold">
                         {format(parseISO(r.date), "dd MMM yyyy")}

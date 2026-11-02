@@ -1,7 +1,9 @@
 import { create } from "zustand";
 
+export type SortKey = "date" | "createdByName" | "createdAt" | "updatedAt";
+
 /**
- * Month/year selection for Report History.
+ * The view of Report History: month and year, search, sort and page.
  *
  * Lives outside the page component because opening a report unmounts the list:
  * a clerk working through March should come back to March after viewing,
@@ -18,8 +20,15 @@ interface ReportFiltersState {
   month: string;
   /** Four-digit year, or "all". */
   year: string;
+  query: string;
+  sortKey: SortKey;
+  sortDir: "asc" | "desc";
+  page: number;
   setMonth: (v: string) => void;
   setYear: (v: string) => void;
+  setQuery: (v: string) => void;
+  setSort: (sortKey: SortKey, sortDir: "asc" | "desc") => void;
+  setPage: (v: number) => void;
   /** Return to the default view: the current month, across all years. */
   reset: () => void;
 }
@@ -29,11 +38,21 @@ interface ReportFiltersState {
  * leaves this open for days, and a browser sitting through midnight on the 31st
  * would otherwise keep defaulting to a month that has ended.
  */
-const defaults = () => ({ month: String(new Date().getMonth()), year: "all" });
+const defaults = () => ({
+  month: String(new Date().getMonth()),
+  year: "all",
+  query: "",
+  sortKey: "date" as SortKey,
+  sortDir: "desc" as const,
+  page: 1,
+});
 
 export const useReportFilters = create<ReportFiltersState>((set) => ({
   ...defaults(),
   setMonth: (month) => set({ month }),
   setYear: (year) => set({ year }),
+  setQuery: (query) => set({ query }),
+  setSort: (sortKey, sortDir) => set({ sortKey, sortDir }),
+  setPage: (page) => set({ page }),
   reset: () => set(defaults()),
 }));
