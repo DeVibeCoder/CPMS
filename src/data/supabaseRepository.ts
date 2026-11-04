@@ -85,7 +85,7 @@ interface SettingsRow {
   cement_opening_date: string | null;
 }
 
-const ROLES: Role[] = ["admin", "dispatch", "viewer"];
+const ROLES: Role[] = ["admin", "dispatch", "viewer", "viewer1"];
 
 /** Drop undefined so a partial patch never clears a column it didn't mention. */
 function defined<T extends object>(obj: T): Record<string, unknown> {

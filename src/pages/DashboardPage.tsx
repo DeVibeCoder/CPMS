@@ -50,6 +50,8 @@ export default function DashboardPage() {
   const role = useAuth((s) => s.user?.role);
   const canCreate = can(role, "createReports");
   const canExport = can(role, "exportPdf");
+  // Viewer 1 reads the figures here but cannot open a report itself.
+  const canOpenReports = can(role, "viewReports");
   const [reports, setReports] = useState<Report[] | null>(null);
   const [preset, setPreset] = useState<PresetKey>("7d");
   const [range, setRange] = useState(presetRange("7d"));
@@ -206,14 +208,16 @@ export default function DashboardPage() {
         </div>
         <div className="flex w-full gap-2 sm:w-auto">
           {todaysReport ? (
-            <Button
-              variant="outline"
-              className="w-full sm:w-auto"
-              onClick={() => navigate(`/reports/${todaysReport.id}`)}
-            >
-              <FileText className="h-4 w-4" />
-              View Today's Report
-            </Button>
+            canOpenReports && (
+              <Button
+                variant="outline"
+                className="w-full sm:w-auto"
+                onClick={() => navigate(`/reports/${todaysReport.id}`)}
+              >
+                <FileText className="h-4 w-4" />
+                View Today's Report
+              </Button>
+            )
           ) : (
             canCreate && (
               <Button
@@ -284,11 +288,13 @@ export default function DashboardPage() {
     <Card>
       <CardHeader className="flex-row items-center justify-between space-y-0">
         <CardTitle>Recent Reports</CardTitle>
-        <Button variant="ghost" size="sm" asChild>
-          <Link to="/reports">
-            View all <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
-        </Button>
+        {canOpenReports && (
+          <Button variant="ghost" size="sm" asChild>
+            <Link to="/reports">
+              View all <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </Button>
+        )}
       </CardHeader>
       <CardContent className="p-0">
         <div className="divide-y divide-border">
@@ -298,7 +304,8 @@ export default function DashboardPage() {
               <button
                 key={r.id}
                 onClick={() => navigate(`/reports/${r.id}`)}
-                className="flex w-full items-center gap-4 px-4 py-3.5 text-left transition-colors hover:bg-muted/50 active:bg-muted"
+                disabled={!canOpenReports}
+                className="flex w-full items-center gap-4 px-4 py-3.5 text-left transition-colors hover:bg-muted/50 active:bg-muted disabled:pointer-events-none"
               >
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                   <FileText className="h-4 w-4" />
@@ -367,16 +374,18 @@ export default function DashboardPage() {
               <span className="text-xs">Create</span>
             </Button>
           )}
-          <Button
-            size="lg"
-            variant="outline"
-            className="h-14 flex-col gap-1"
-            disabled={!kpiReport}
-            onClick={() => kpiReport && navigate(`/reports/${kpiReport.id}`)}
-          >
-            <FileText className="h-5 w-5" />
-            <span className="text-xs">Latest</span>
-          </Button>
+          {canOpenReports && (
+            <Button
+              size="lg"
+              variant="outline"
+              className="h-14 flex-col gap-1"
+              disabled={!kpiReport}
+              onClick={() => kpiReport && navigate(`/reports/${kpiReport.id}`)}
+            >
+              <FileText className="h-5 w-5" />
+              <span className="text-xs">Latest</span>
+            </Button>
+          )}
           {canExport && (
             <>
               <Button

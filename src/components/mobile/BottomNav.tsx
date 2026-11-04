@@ -33,12 +33,14 @@ const TABS: Tab[] = [
     to: "/reports",
     icon: History,
     match: (p) => p.startsWith("/reports"),
+    requires: "viewReports",
   },
   {
     label: "Stock",
     to: "/inventory",
     icon: Boxes,
     match: (p) => p.startsWith("/inventory"),
+    requires: "viewInventory",
   },
   {
     label: "Analytics",
@@ -54,7 +56,7 @@ const TABS: Tab[] = [
     to: "/attendance",
     icon: CalendarClock,
     match: (p) => p.startsWith("/attendance"),
-    requires: "attendance",
+    requires: "viewAttendance",
   },
   // Settings is a hub — Users & Profile are tabs inside it. It replaces the old
   // "Menu" sheet; theme and sign-out moved to the header's account controls.
@@ -66,6 +68,7 @@ const TABS: Tab[] = [
       p.startsWith("/settings") ||
       p.startsWith("/users") ||
       p.startsWith("/profile"),
+    requires: "accountSettings",
   },
 ];
 

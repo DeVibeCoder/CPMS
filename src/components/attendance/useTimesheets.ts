@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HISTORY_DAYS, attendanceSource } from "@/data/attendance";
+import { useCanManageAttendance } from "./shared";
 import { toast } from "@/hooks/use-toast";
 import {
   bookedStatus,
@@ -176,6 +177,14 @@ export function useTimesheets(): Timesheets {
   const since = useMemo(() => addDays(today, -HISTORY_DAYS), [today]);
 
   /**
+   * A read-only account (Viewer 1) sees what is stored and nothing else. The
+   * automatic rules below would otherwise rewrite rows on screen and try to
+   * save them; row-level security refuses that, and the reload after the
+   * refusal would run the rule again — a loop of error messages.
+   */
+  const canWrite = useCanManageAttendance();
+
+  /**
    * What the backend is believed to hold.
    *
    * Timesheet rows are not saved by their call sites. They are changed from four
@@ -280,12 +289,12 @@ export function useTimesheets(): Timesheets {
   }, []);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || !canWrite) return;
     const timer = window.setTimeout(() => {
       void run(flush, "The timesheet could not be saved");
     }, FLUSH_DELAY);
     return () => window.clearTimeout(timer);
-  }, [entries, loading, flush, run]);
+  }, [entries, loading, canWrite, flush, run]);
 
   /** Forget rows the database has already removed, so no delete is sent. */
   const forgetSaved = useCallback((doomed: (entry: TimesheetEntry) => boolean) => {
@@ -321,15 +330,15 @@ export function useTimesheets(): Timesheets {
    * `lib/attendance/autoStatus.ts`, where it can be tested without React.
    */
   useEffect(() => {
-    if (loading) return;
+    if (loading || !canWrite) return;
     setEntries((current) => reconcileEntries(current, departures, isSubmitted));
-  }, [loading, departures, isSubmitted]);
+  }, [loading, canWrite, departures, isSubmitted]);
 
   const syncDay = useCallback(
     (date: string) => {
       // A completed day is a record. A departure entered afterwards does not
       // get to rewrite it — reopen the day to do that.
-      if (submitted.has(date)) return;
+      if (!canWrite || submitted.has(date)) return;
       setEntries((current) => {
         let next: Map<string, TimesheetEntry> | null = null;
         for (const employee of roster) {
@@ -344,7 +353,7 @@ export function useTimesheets(): Timesheets {
         return next ?? current;
       });
     },
-    [roster, departures, submitted],
+    [canWrite, roster, departures, submitted],
   );
 
   const updateEntry = useCallback(

@@ -39,6 +39,13 @@ export const PERMISSIONS = {
     // is a different act from running attendance day to day, and the plant
     // keeps it with administrators.
     manageStaffList: true,
+    // Which sections can be opened at all. Every role but Viewer 1 reaches
+    // reports, inventory and settings; `viewAttendance` is the route, while
+    // `attendance` above is permission to change what it holds.
+    viewReports: true,
+    viewInventory: true,
+    accountSettings: true,
+    viewAttendance: true,
   },
   // Can create, edit and generate (print/export) reports — but not delete,
   // manage users, or change settings.
@@ -66,6 +73,10 @@ export const PERMISSIONS = {
     // already cross. What this prevents is the whole plant going in one click,
     // which is a foot-gun rather than a privilege.
     manageStaffList: false,
+    viewReports: true,
+    viewInventory: true,
+    accountSettings: true,
+    viewAttendance: true,
   },
   // Read-only. Can view everything but change nothing.
   viewer: {
@@ -78,6 +89,29 @@ export const PERMISSIONS = {
     exportPdf: false,
     attendance: false,
     manageStaffList: false,
+    viewReports: true,
+    viewInventory: true,
+    accountSettings: true,
+    viewAttendance: false,
+  },
+  // "Viewer 1". Read-only, and narrower than viewer: Dashboard, Analytics and
+  // Attendance, nothing else — not Report History, Inventory or Settings. It
+  // sees Attendance but cannot change it; row-level security grants the role
+  // select on those tables and nothing more.
+  viewer1: {
+    deleteReports: false,
+    manageUsers: false,
+    settings: false,
+    backup: false,
+    createReports: false,
+    editReports: false,
+    exportPdf: false,
+    attendance: false,
+    manageStaffList: false,
+    viewReports: false,
+    viewInventory: false,
+    accountSettings: false,
+    viewAttendance: true,
   },
 } as const;
 

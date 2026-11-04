@@ -93,7 +93,14 @@ export default function App() {
           {/* Every report screen shares one scope, so the Report History month
               survives opening or editing a day but resets on the way out. */}
           <Route element={<ReportsScope />}>
-            <Route path="/reports" element={<ReportHistoryPage />} />
+            <Route
+              path="/reports"
+              element={
+                <RequireCapability capability="viewReports">
+                  <ReportHistoryPage />
+                </RequireCapability>
+              }
+            />
             <Route
               path="/reports/new"
               element={
@@ -102,7 +109,14 @@ export default function App() {
                 </RequireCapability>
               }
             />
-            <Route path="/reports/:id" element={<ViewReportPage />} />
+            <Route
+              path="/reports/:id"
+              element={
+                <RequireCapability capability="viewReports">
+                  <ViewReportPage />
+                </RequireCapability>
+              }
+            />
             <Route
               path="/reports/:id/edit"
               element={
@@ -118,25 +132,39 @@ export default function App() {
           {/* Inventory — the cement bin card. A single page, so it renders
               directly with no wrapper or tab bar. Everyone may look; only an
               administrator can set the manual opening balance. */}
-          <Route path="/inventory" element={<CementPage />} />
+          <Route
+            path="/inventory"
+            element={
+              <RequireCapability capability="viewInventory">
+                <CementPage />
+              </RequireCapability>
+            }
+          />
           <Route
             path="/inventory/cement"
             element={<Navigate to="/inventory" replace />}
           />
 
-          {/* Attendance — under development, running on mock data and gated to
-              administrators. Nothing here touches the reports backend. */}
+          {/* Attendance — administrators and dispatch, and Viewer 1 read-only.
+              Its tables are its own; nothing here touches the reports backend. */}
           <Route
             path="/attendance"
             element={
-              <RequireCapability capability="attendance">
+              <RequireCapability capability="viewAttendance">
                 <AttendancePage />
               </RequireCapability>
             }
           />
 
           {/* Users, general settings & profile now live as tabs under /settings */}
-          <Route path="/settings" element={<SettingsLayout />}>
+          <Route
+            path="/settings"
+            element={
+              <RequireCapability capability="accountSettings">
+                <SettingsLayout />
+              </RequireCapability>
+            }
+          >
             <Route index element={<SettingsIndex />} />
             <Route
               path="general"

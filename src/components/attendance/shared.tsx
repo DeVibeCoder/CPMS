@@ -21,9 +21,8 @@ import {
  * one action to somebody else.
  *
  * It is asked rather than assumed because the route guard and this are not the
- * same question today only by coincidence — everyone who can open the page can
- * currently edit it. If a read-only role is ever let in, this is the line that
- * already knows what to do about it.
+ * same question: Viewer 1 can open the page (`viewAttendance`) but not change
+ * it, and every write control, and the hook's automatic writes, ask this.
  */
 export function useCanManageAttendance(): boolean {
   return useAuth((s) => can(s.user?.role, "attendance"));

@@ -10,8 +10,9 @@
  *  - admin    — full access to everything.
  *  - dispatch — can create, edit and generate (print/export) reports; view only otherwise.
  *  - viewer   — read-only. Can view reports and dashboards but not change anything.
+ *  - viewer1  — "Viewer 1". Read-only, and only Dashboard, Analytics and Attendance.
  */
-export type Role = "admin" | "dispatch" | "viewer";
+export type Role = "admin" | "dispatch" | "viewer" | "viewer1";
 
 export interface User {
   id: string;

@@ -17,7 +17,7 @@
 // =============================================================================
 import { createClient } from "@supabase/supabase-js";
 
-const ROLES = ["admin", "dispatch", "viewer"];
+const ROLES = ["admin", "dispatch", "viewer", "viewer1"];
 const MIN_PASSWORD = 8;
 
 /** GoTrue disables an account by banning it. A century is "indefinitely". */

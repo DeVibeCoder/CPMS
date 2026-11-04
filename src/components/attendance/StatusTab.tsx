@@ -42,7 +42,7 @@ import {
 } from "@/types/attendance";
 import type { Timesheets } from "./useTimesheets";
 import { DateField } from "./DateField";
-import { DepartureBadge } from "./shared";
+import { DepartureBadge, useCanManageAttendance } from "./shared";
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -67,11 +67,14 @@ const monthLabel = (ym: string) => {
  */
 export function StatusTab({ sheets }: { sheets: Timesheets }) {
   const [adding, setAdding] = useState(false);
+  // Viewer 1 sees what is booked but cannot add or remove a booking.
+  const canEdit = useCanManageAttendance();
 
   return (
     <DepartureList
       sheets={sheets}
       departures={sheets.openDepartures}
+      readOnly={!canEdit}
       empty={
         sheets.employees.length === 0
           ? "Add staff first — a departure is recorded against a person."
@@ -85,22 +88,24 @@ export function StatusTab({ sheets }: { sheets: Timesheets }) {
         });
       }}
       action={
-        <>
-          <Button
-            size="sm"
-            className="ml-auto"
-            disabled={sheets.employees.length === 0}
-            onClick={() => setAdding(true)}
-          >
-            <Plus className="h-4 w-4" />
-            Add
-          </Button>
-          <AddDepartureDialog
-            open={adding}
-            onOpenChange={setAdding}
-            sheets={sheets}
-          />
-        </>
+        canEdit && (
+          <>
+            <Button
+              size="sm"
+              className="ml-auto"
+              disabled={sheets.employees.length === 0}
+              onClick={() => setAdding(true)}
+            >
+              <Plus className="h-4 w-4" />
+              Add
+            </Button>
+            <AddDepartureDialog
+              open={adding}
+              onOpenChange={setAdding}
+              sheets={sheets}
+            />
+          </>
+        )
       }
     />
   );

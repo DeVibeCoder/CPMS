@@ -34,15 +34,18 @@ import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { repo } from "@/data";
 import { useAuth } from "@/store/auth";
 import type { Role, User } from "@/types";
-import { initials, roleDescription } from "@/lib/utils";
+import { initials, roleDescription, roleLabel } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 
 /** Icon shown alongside a role badge. */
 function RoleIcon({ role, className }: { role: Role; className?: string }) {
   if (role === "admin") return <Shield className={className} />;
-  if (role === "viewer") return <Eye className={className} />;
+  if (role === "viewer" || role === "viewer1") return <Eye className={className} />;
   return <UserCog className={className} />;
 }
+
+/** The badge shows the stored role name, except where it would read "Viewer1". */
+const roleBadgeText = (role: Role) => (role === "viewer1" ? roleLabel(role) : role);
 
 /** Supabase Auth's own floor is 6; api/admin-users enforces 8. */
 const MIN_PASSWORD = 8;
@@ -247,6 +250,7 @@ export default function UsersPage() {
               <SelectItem value="admin">Admin</SelectItem>
               <SelectItem value="dispatch">Dispatch</SelectItem>
               <SelectItem value="viewer">Viewer</SelectItem>
+              <SelectItem value="viewer1">Viewer 1</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -320,7 +324,7 @@ export default function UsersPage() {
                         className="gap-1 capitalize"
                       >
                         <RoleIcon role={u.role} className="h-3 w-3" />
-                        {u.role}
+                        {roleBadgeText(u.role)}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
@@ -392,7 +396,7 @@ export default function UsersPage() {
                         className="gap-1 capitalize"
                       >
                         <RoleIcon role={u.role} className="h-3 w-3" />
-                        {u.role}
+                        {roleBadgeText(u.role)}
                       </Badge>
                     </div>
                     <div className="truncate text-xs text-muted-foreground">
@@ -497,6 +501,7 @@ export default function UsersPage() {
                     <SelectItem value="admin">Admin</SelectItem>
                     <SelectItem value="dispatch">Dispatch</SelectItem>
                     <SelectItem value="viewer">Viewer</SelectItem>
+                    <SelectItem value="viewer1">Viewer 1</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">

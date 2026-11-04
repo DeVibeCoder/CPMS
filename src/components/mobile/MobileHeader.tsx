@@ -5,7 +5,7 @@ import { Logo } from "@/components/common/Logo";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { usePageMetaStore } from "@/store/pageMeta";
-import { useAuth } from "@/store/auth";
+import { can, useAuth } from "@/store/auth";
 import { initials } from "@/lib/utils";
 
 /**
@@ -22,6 +22,7 @@ export function MobileHeader({ focused }: { focused: boolean }) {
   const description = usePageMetaStore((s) => s.description);
   const user = useAuth((s) => s.user);
   const logout = useAuth((s) => s.logout);
+  const canOpenProfile = can(user?.role, "accountSettings");
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const name = user ? user.displayName || user.name : "";
@@ -72,7 +73,8 @@ export function MobileHeader({ focused }: { focused: boolean }) {
           {user && (
             <button
               onClick={() => navigate("/settings/profile")}
-              aria-label={`${name} — open profile`}
+              disabled={!canOpenProfile}
+              aria-label={canOpenProfile ? `${name} — open profile` : name}
               className="ml-0.5 flex h-9 w-9 items-center justify-center rounded-full"
             >
               {user.avatarUrl ? (

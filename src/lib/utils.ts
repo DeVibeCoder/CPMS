@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import type { Role } from "@/types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -53,7 +54,7 @@ export function initials(name: string): string {
 }
 
 /** Human-readable role label. */
-export function roleLabel(role: "admin" | "dispatch" | "viewer"): string {
+export function roleLabel(role: Role): string {
   switch (role) {
     case "admin":
       return "Administrator";
@@ -61,11 +62,13 @@ export function roleLabel(role: "admin" | "dispatch" | "viewer"): string {
       return "Dispatch";
     case "viewer":
       return "Viewer";
+    case "viewer1":
+      return "Viewer 1";
   }
 }
 
 /** One-line description of what a role can do (used in the Users form). */
-export function roleDescription(role: "admin" | "dispatch" | "viewer"): string {
+export function roleDescription(role: Role): string {
   switch (role) {
     case "admin":
       return "Full access — reports, users, settings and backups.";
@@ -73,5 +76,7 @@ export function roleDescription(role: "admin" | "dispatch" | "viewer"): string {
       return "Create, edit and generate reports. View only otherwise.";
     case "viewer":
       return "Read-only access to reports and dashboards.";
+    case "viewer1":
+      return "Read-only access to Dashboard, Analytics and Attendance only.";
   }
 }

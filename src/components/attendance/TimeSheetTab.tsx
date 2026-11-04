@@ -47,7 +47,12 @@ import {
   timesheetCsv,
 } from "@/lib/attendance/timesheetCsv";
 import type { Timesheets } from "./useTimesheets";
-import { StatTile, StatusBadge, departureTint } from "./shared";
+import {
+  StatTile,
+  StatusBadge,
+  departureTint,
+  useCanManageAttendance,
+} from "./shared";
 import { TimeField } from "./TimeField";
 import { BreaksField } from "./BreaksField";
 
@@ -86,6 +91,8 @@ export function TimeSheetTab({
   onDateChange: (date: string) => void;
 }) {
   const submitted = sheets.isSubmitted(date);
+  // Viewer 1 reads the sheet; every field and the sign-off are closed to it.
+  const canEdit = useCanManageAttendance();
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<TimingImportResult | null>(
     null,
@@ -295,7 +302,9 @@ export function TimeSheetTab({
               onClick: () => fileRef.current?.click(),
               disabled: importing,
             },
-          ].map((tool) => (
+          ]
+            .filter((tool) => canEdit || tool.icon === FileDown)
+            .map((tool) => (
             <Button
               key={tool.label}
               variant="outline"
@@ -367,7 +376,7 @@ export function TimeSheetTab({
                 // A booked absence owns the row as completely as a sign-off
                 // does: there are no hours to record on a day somebody was
                 // not here, and the status is not this screen's to argue with.
-                const locked = submitted || Boolean(away);
+                const locked = !canEdit || submitted || Boolean(away);
 
                 return (
                   <TableRow
@@ -432,7 +441,7 @@ export function TimeSheetTab({
                       <Input
                         className="h-8"
                         placeholder="—"
-                        disabled={submitted}
+                        disabled={!canEdit || submitted}
                         value={entry?.remarks ?? ""}
                         onChange={(e) =>
                           set(employee.id, { remarks: e.target.value })
@@ -455,6 +464,10 @@ export function TimeSheetTab({
               <Lock className="h-3.5 w-3.5" />
               Completed and locked. It appears in the master sheet.
             </span>
+          ) : !canEdit ? (
+            <span className="text-muted-foreground">
+              Open. Your account can read this sheet but not change it.
+            </span>
           ) : (
               <span className="text-muted-foreground">
               Times are 24-hour — type 0700, or use Template and Import for the
@@ -466,7 +479,7 @@ export function TimeSheetTab({
         {/* Full width on a phone: this is the one button on the screen that
             finishes the day, and it should not end up a thumbnail wedged
             against the edge after the sentence beside it wraps. */}
-        {submitted ? (
+        {!canEdit ? null : submitted ? (
           <Button
             variant="outline"
             className="w-full sm:w-auto"

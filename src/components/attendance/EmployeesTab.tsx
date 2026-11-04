@@ -230,14 +230,16 @@ function StaffList({ sheets }: { sheets: Timesheets }) {
             are recognisable without being spelled out. Add staff keeps its
             words: it is the one thing somebody opens this tab to do. */}
         <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto sm:flex-wrap">
-          <Button
-            size="sm"
-            className="flex-1 sm:flex-none"
-            onClick={() => setAdding(true)}
-          >
-            <UserPlus className="h-4 w-4" />
-            Add staff
-          </Button>
+          {isAdmin && (
+            <Button
+              size="sm"
+              className="flex-1 sm:flex-none"
+              onClick={() => setAdding(true)}
+            >
+              <UserPlus className="h-4 w-4" />
+              Add staff
+            </Button>
+          )}
 
           {canReplaceList && (
             <input
