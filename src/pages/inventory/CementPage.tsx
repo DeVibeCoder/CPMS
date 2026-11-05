@@ -48,7 +48,6 @@ import { useSettings } from "@/store/settings";
 import { useAuth, can } from "@/store/auth";
 import {
   buildBinCard,
-  hasVariance,
   summariseBinCard,
   type BinCardRow,
 } from "@/lib/binCard";
@@ -122,49 +121,6 @@ function Tile({
 }
 
 const ALL_MONTHS = "all";
-
-/** Marks a row whose reported balance its movements do not explain. */
-function VarianceNote({ row }: { row: BinCardRow }) {
-  if (!hasVariance(row)) return null;
-  const sign = row.variance > 0 ? "+" : "−";
-  return (
-    <div
-      className="text-[11px] font-medium text-warning"
-      title="The report's Current Stock differs from Opening + New Shipment − Production by this much. The report's figure stands; check the entries for this date."
-    >
-      {sign}
-      {formatNumber(Math.abs(row.variance), { decimals: 2 })} unexplained
-    </div>
-  );
-}
-
-/**
- * What the balance is, and what it is not. Worked out from the whole ledger, not
- * the selected month: a date with an unexplained difference still matters when
- * somebody is looking at a month without one.
- */
-function BalanceNote({
-  rows,
-  balance,
-}: {
-  rows: BinCardRow[];
-  balance: number;
-}) {
-  const flagged = rows.filter(hasVariance).length;
-  // A shipment logged after the newest report closes on the sum, not on a report.
-  const reported = Boolean(rows[rows.length - 1]?.reportId);
-  return (
-    <p className="rounded-lg border border-warning/40 bg-warning/10 p-2.5 text-xs text-foreground">
-      <span className="font-semibold">
-        {reported ? "Reported closing stock" : "Calculated balance"}:{" "}
-        {formatNumber(balance, { decimals: 2 })} MT.
-      </span>{" "}
-      Physical stock has not been independently verified.
-      {flagged > 0 &&
-        ` An unresolved historical stock discrepancy remains under review: ${flagged} date${flagged === 1 ? "" : "s"} show an unexplained difference (see All months).`}
-    </p>
-  );
-}
 
 /** What changing a date's shipment does to the balances, for the messages. */
 function shipmentEffect(rows: BinCardRow[], date: string): string {
@@ -494,10 +450,6 @@ export default function CementPage() {
         />
       </div>
 
-      {rows.length > 0 && (
-        <BalanceNote rows={rows} balance={summary.currentBalance} />
-      )}
-
       {/* Bin card. No title block above it — the page header already says what
           this is, and a second heading only pushed the rows down the screen. */}
       <Card>
@@ -606,7 +558,6 @@ export default function CementPage() {
                         </TableCell>
                         <TableCell className="text-right font-bold tabular-nums text-primary">
                           {formatNumber(r.currentBalance, { decimals: 2 })}
-                          <VarianceNote row={r} />
                         </TableCell>
                         <TableCell className="text-right">
                           {r.reportId && (
@@ -683,9 +634,6 @@ export default function CementPage() {
                             : `−${formatNumber(r.production, { decimals: 2 })}`}
                         </div>
                       </div>
-                    </div>
-                    <div className="mt-2 empty:hidden">
-                      <VarianceNote row={r} />
                     </div>
                   </div>
                 ))}
